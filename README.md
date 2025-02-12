@@ -1,2 +1,2 @@
-# agents
+# Agents
 AI agents workshop examples
