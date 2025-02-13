@@ -11,3 +11,5 @@ pip install -r requirements.txt
 https://ai.pydantic.dev/agents/
 
 https://logfire.pydantic.dev/vpavasov/agent-workshop
+
+https://ai.google.dev/gemini-api/docs/api-key#windows
