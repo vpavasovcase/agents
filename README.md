@@ -18,6 +18,34 @@
 
 ---
 
+## Generate a Personal Access Token (PAT) for GitHub
+1. Go to **GitHub → Settings → Developer Settings → Personal Access Tokens**.
+2. Click **Generate new token (classic)**.
+3. Select scopes:
+   - Check **repo** (for full repo access).
+   - Optionally check **workflow** if working with GitHub Actions.
+4. Click **Generate token** and **copy it** (you won’t see it again).
+
+## Use the Token Instead of a Password
+When pushing/pulling:
+
+```sh
+git push origin main
+```
+Git will ask for a username and password:
+
+    Username: Your GitHub username.
+
+    Password: Paste the Personal Access Token.
+    
+To avoid entering the token every time, you can cache credentials.
+
+```sh
+git config --global credential.helper store
+```
+
+---
+
 ## Virtual Environments (venv)
 
 - **Why use a virtual environment?**
@@ -81,6 +109,12 @@
     api_key = os.getenv("API_KEY")
     print(api_key)
     ```
+
+---
+
+## Gemini API Key
+
+- https://ai.google.dev/gemini-api/docs/api-key#windows
 
 ---
 
