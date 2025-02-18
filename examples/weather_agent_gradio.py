@@ -6,7 +6,7 @@ import os
 from httpx import AsyncClient
 
 from pydantic_ai.messages import ToolCallPart, ToolReturnPart
-from pydantic_ai_examples.weather_agent import Deps, weather_agent
+from weather_agent import Deps, weather_agent
 
 try:
     import gradio as gr
