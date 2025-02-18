@@ -45,7 +45,7 @@ class SupportResult(BaseModel):
 
 
 support_agent = Agent(
-    'openai:gpt-4o',
+    'google-gla:gemini-1.5-flash',
     deps_type=SupportDependencies,
     result_type=SupportResult,
     system_prompt=(
