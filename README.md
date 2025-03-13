@@ -337,7 +337,7 @@ async def main():
 - **Questions?**
 ---
 
-**Agent objects**
+# Agent objects
 
 - Agent interfaces in PydanticAI interact with AI models.
 - A single agent can control an app, or multiple agents can work together for complex tasks.
@@ -408,7 +408,25 @@ print(result.data)  # Rome
 
 ```python
 from pydantic_ai.usage import UsageLimits
+
 result = agent.run_sync('Answer briefly.', usage_limits=UsageLimits(response_tokens_limit=10))
+
+result_sync = agent.run_sync(
+        'Begin infinite retry loop!', usage_limits=UsageLimits(request_limit=3)  
+    )
+```
+
+```python
+agent = Agent(
+    'anthropic:claude-3-5-sonnet-latest',
+    retries=3,
+    result_type=NeverResultType,
+    system_prompt='Any time you get a response, call the `infinite_retry_tool` to produce another response.',
+)
+
+@agent.tool_plain(retries=5)  
+def infinite_retry_tool() -> int:
+    raise ModelRetry('Please try again.')
 ```
 
 ---
@@ -542,10 +560,24 @@ def get_user(ctx: RunContext, name: str) -> int:
 - Example:
 
 ```python
-try:
-    result = agent.run_sync('Find volume of size 6.')
-except UnexpectedModelBehavior as e:
-    print(e)
+@agent.tool_plain
+def calc_volume(size: int) -> int:  
+    if size == 42:
+        return size**3
+    else:
+        raise ModelRetry('Please try again.')
+
+
+with capture_run_messages() as messages:  
+    try:
+        result = agent.run_sync('Please get me the volume of a box with size 6.')
+    except UnexpectedModelBehavior as e:
+        print('An error occurred:', e)
+        #> An error occurred: Tool exceeded max retries count of 1
+        print('cause:', repr(e.__cause__))
+        #> cause: ModelRetry('Please try again.')
+    else:
+        print(result.data)
 ```
 
 ---
@@ -555,7 +587,7 @@ except UnexpectedModelBehavior as e:
 - A single run can handle a full conversation.
 - Multiple runs help maintain state over time.
 
-```
+```python
 # First run
 result1 = agent.run_sync('Who was Albert Einstein?')
 print(result1.data)
