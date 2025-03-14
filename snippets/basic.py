@@ -1,5 +1,5 @@
 from pydantic_ai import Agent
-from snippets.model import model
+from model import model
 
 agent = Agent(  
     model=model,
