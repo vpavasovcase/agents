@@ -1,16 +1,5 @@
 from pydantic_ai import Agent
-from dotenv import load_dotenv
-from httpx import AsyncClient
-from pydantic_ai.models.gemini import GeminiModel
-import os
-
-load_dotenv()
-
-model = GeminiModel(
-    model_name='gemini-1.5-flash',
-    api_key=os.getenv('GEMINI_API_KEY'),
-    http_client=AsyncClient(),
-)
+from snippets.model import model
 
 agent = Agent(  
     model=model,
