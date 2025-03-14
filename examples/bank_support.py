@@ -1,8 +1,4 @@
 """Small but complete example of using PydanticAI to build a support agent for a bank.
-
-Run with:
-
-    uv run -m pydantic_ai_examples.bank_support
 """
 
 from dataclasses import dataclass
@@ -10,6 +6,19 @@ from dataclasses import dataclass
 from pydantic import BaseModel, Field
 
 from pydantic_ai import Agent, RunContext
+
+from pydantic_ai.models.gemini import GeminiModel
+
+from dotenv import load_dotenv
+
+import os
+
+load_dotenv()
+
+gemini = GeminiModel(
+    model_name=os.getenv('PYDANTIC_AI_MODEL'),
+    api_key=os.getenv('GEMINI_API_KEY'),
+) 
 
 
 class DatabaseConn:
@@ -45,7 +54,7 @@ class SupportResult(BaseModel):
 
 
 support_agent = Agent(
-    'google-gla:gemini-1.5-flash',
+    model=gemini,
     deps_type=SupportDependencies,
     result_type=SupportResult,
     system_prompt=(
