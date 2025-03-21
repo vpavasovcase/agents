@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Model Context Protocol & PydanticAI Framework</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background-color: #f0f0f0;
+        }
+        .slide-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            padding: 20px;
+        }
+        .slide {
+            width: 800px;
+            height: 600px;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            margin-bottom: 40px;
+            display: flex;
+            flex-direction: column;
+        }
+        .slide-header {
+            background-color: #2fa382;
+            color: white;
+            padding: 20px 40px;
+        }
+        .slide-content {
+            padding: 20px 40px;
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .title-slide .slide-content {
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+        h1 {
+            font-size: 36px;
+            margin: 0;
+        }
+        h2 {
+            font-size: 28px;
+            margin: 0 0 20px 0;
+        }
+        ul, ol {
+            font-size: 24px;
+            margin: 20px 0;
+            padding-left: 40px;
+        }
+        li {
+            margin-bottom: 15px;
+        }
+        p {
+            font-size: 24px;
+            margin: 10px 0;
+        }
+        .subtitle {
+            font-size: 24px;
+            font-style: italic;
+            margin-top: 10px;
+        }
+        code {
+            font-family: 'Consolas', 'Monaco', monospace;
+            background-color: #000000;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-size: 90%;
+        }
+        pre {
+            background-color: #000000;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-size: 18px;
+            line-height: 1.5;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+        /* Python syntax highlighting */
+        .keyword {
+            color: #cc87d8;
+            font-weight: bold;
+        }
+        .function {
+            color: #dcdcaa;
+        }
+        .string {
+            color: #ce9178;
+        }
+        .comment {
+            color: #6a9955;
+            font-style: italic;
+        }
+        .class {
+            color: #4ec9b0;
+        }
+        .module {
+            color: #9cdcfe;
+        }
+        .variable {
+            color: #9cdcfe;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 20px;
+        }
+        th, td {
+            padding: 12px 15px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+        th {
+            background-color: #4572c4;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        .slide-number {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+        .slide-footer {
+            background-color: #f5f5f5;
+            padding: 10px;
+            text-align: right;
+            font-size: 14px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="slide-container">
+        <!-- Slide 1 -->
+        <div class="slide title-slide">
+            <div class="slide-header">
+                <h1>Model Context Protocol & PydanticAI Framework</h1>
+            </div>
+            <div class="slide-content">
+                <p class="subtitle">90-Minute Technical Lecture</p>
+            </div>
+            <div class="slide-footer">
+                Slide 1
+            </div>
+        </div>
+
+        <!-- Slide 2 -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2>Agenda</h2>
+            </div>
+            <div class="slide-content">
+                <ul>
+                    <li>Problem space & motivation</li>
+                    <li>Model Context Protocol (MCP) overview</li>
+                    <li>PydanticAI framework introduction</li>
+                    <li>MCP integration in PydanticAI</li>
+                    <li>Practical examples & code walkthrough</li>
+                    <li>Hands-on exercise</li>
+                    <li>Q&A</li>
+                </ul>
+            </div>
+            <div class="slide-footer">
+                Slide 2
+            </div>
+        </div>
+
+        <!-- Slide 3 -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2>The Challenge</h2>
+            </div>
+            <div class="slide-content">
+                <ul>
+                    <li>AI models isolated from real-world data & tools</li>
+                    <li>Custom integrations creating fragmentation</li>
+                    <li>Scalability issues for connected AI systems</li>
+                    <li>"Information silos" limiting practical applications</li>
+                </ul>
+            </div>
+            <div class="slide-footer">
+                Slide 3
+            </div>
+        </div>
+
+        <!-- Slide 4 -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2>Model Context Protocol (MCP)</h2>
+            </div>
+            <div class="slide-content">
+                <ul>
+                    <li>Open standard introduced by Anthropic (Nov 2024)</li>
+                    <li>Unified method for AI to access contextual info</li>
+                    <li>Standardized execution of actions on external systems</li>
+                    <li>Solution for streamlined context management</li>
+                </ul>
+            </div>
+            <div class="slide-footer">
+                Slide 4
+            </div>
+        </div>
+
+        <!-- Slide 5 -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2>MCP: The "USB Port" for AI</h2>
+            </div>
+            <div class="slide-content">
+                <ul>
+                    <li>Universal interface for AI assistants</li>
+                    <li>Plug-and-play with diverse data sources & services</li>
+                    <li>No custom-built connections needed</li>
+                    <li>Simplifies development process</li>
+                    <li>Promotes interoperability across platforms</li>
+                </ul>
+            </div>
+            <div class="slide-footer">
+                Slide 5
+            </div>
+        </div>
+
+        <!-- Slide 6 -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2>MCP Key Objectives</h2>
+            </div>
+            <div class="slide-content">
+                <ul>
+                    <li>Universal access to arbitrary data sources</li>
+                    <li>Secure & standardized connections</li>
+                    <li>Sustainable ecosystem of reusable connectors</li>
+                    <li>Reduced development overhead</li>
+                </ul>
+            </div>
+            <div class="slide-footer">
+                Slide 6
+            </div>
+        </div>
+
+        <!-- Slide 7 -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2>MCP Architecture</h2>
+            </div>
+            <div class="slide-content">
+                <ul>
+                    <li>Client-server model</li>
+                    <li>Three primary roles:
+                        <ul>
+                            <li>Hosts</li>
+                            <li>Clients</li>
+                            <li>Servers</li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+            <div class="slide-footer">
+                Slide 7
+            </div>
+        </div>
+
+        <!-- Slide 8 -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2>MCP Components</h2>
+            </div>
+            <div class="slide-content">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Component</th>
+                            <th>Description</th>
+                            <th>PydanticAI Example</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Hosts</td>
+                            <td>Applications embedding AI models</td>
+                            <td>Custom app using PydanticAI agent</td>
+                        </tr>
+                        <tr>
+                            <td>Clients</td>
+                            <td>LLM interfaces connecting to servers</td>
+                            <td>PydanticAI Agent with mcp_servers</td>
+                        </tr>
+                        <tr>
+                            <td>Servers</td>
+                            <td>Expose data, tools & prompts</td>
+                            <td>mcp-run-python server</td>
+                        </tr>
+                        <tr>
+                            <td>Resources</td>
+                            <td>Structured data LLMs can read</td>
+                            <td>Data from external API via tool</td>
+                        </tr>
+                        <tr>
+                            <td>Tools</td>
+                            <td>External actions for execution</td>
+                            <td>Python code execution via mcp-run-python</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="slide-footer">
+                Slide 8
+            </div>
+        </div>
+
+        <!-- Slide 9 -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2>PydanticAI Overview</h2>
+            </div>
+            <div class="slide-content">
+                <ul>
+                    <li>Python agent framework by Pydantic team</li>
+                    <li>Brings FastAPI-like experience to AI development</li>
+                    <li>Model-agnostic (OpenAI, Anthropic, Gemini)</li>
+                    <li>Deep integration with Pydantic library</li>
+                </ul>
+            </div>
+            <div class="slide-footer">
+                Slide 9
+            </div>
+        </div>
+
+        <!-- Slide 10 -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2>PydanticAI Key Features</h2>
+            </div>
+            <div class="slide-content">
+                <ul>
+                    <li>Robust data validation & type safety</li>
+                    <li>Optional dependency injection system</li>
+                    <li>Structured responses using Pydantic models</li>
+                    <li>External system interaction via tools</li>
+                    <li>Integration with Pydantic Logfire for debugging</li>
+                    <li>Streamed responses with validation</li>
+                    <li>Graph support for complex workflows</li>
+                </ul>
+            </div>
+            <div class="slide-footer">
+                Slide 10
+            </div>
+        </div>
+
+        <!-- Slide 11 -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2>PydanticAI Building Blocks</h2>
+            </div>
+            <div class="slide-content">
+                <ul>
+                    <li>Agents
+                        <ul>
+                            <li>Central orchestrators</li>
+                            <li>Interact with LLMs</li>
+                            <li>Manage task flow</li>
+                        </ul>
+                    </li>
+                    <li>Tools
+                        <ul>
+                            <li>Functions agents invoke</li>
+                            <li>Perform specific actions</li>
+                            <li>Retrieve external information</li>
+                        </ul>
+                    </li>
+                    <li>Dependencies
+                        <ul>
+                            <li>Inject data/connections/logic at runtime</li>
+                            <li>Enable context-aware behavior</li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+            <div class="slide-footer">
+                Slide 11
+            </div>
+        </div>
+
+        <!-- Slide 12 -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2>PydanticAI & MCP Integration</h2>
+            </div>
+            <div class="slide-content">
+                <ul>
+                    <li>PydanticAI agents as MCP clients</li>
+                    <li>Connect to any MCP-compliant server</li>
+                    <li>Access external capabilities via standardized interface</li>
+                    <li>Expanding potential with MCP ecosystem</li>
+                </ul>
+            </div>
+            <div class="slide-footer">
+                Slide 12
+            </div>
+        </div>
+
+        <!-- Slide 13 -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2>Connection Mechanisms</h2>
+            </div>
+            <div class="slide-content">
+                <ul>
+                    <li>MCPServerHTTP
+                        <ul>
+                            <li>Connections over HTTP using Server-Sent Events</li>
+                            <li>External server running & accessible over network</li>
+                        </ul>
+                    </li>
+                    <li>MCPServerStdio
+                        <ul>
+                            <li>Runs MCP server as subprocess</li>
+                            <li>Communication via standard input/output</li>
+                            <li>PydanticAI manages server lifecycle</li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+            <div class="slide-footer">
+                Slide 13
+            </div>
+        </div>
+
+        <!-- Slide 14 -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2>MCP-Run-Python Server</h2>
+            </div>
+            <div class="slide-content">
+                <ul>
+                    <li>Built within PydanticAI</li>
+                    <li>Executes arbitrary Python code</li>
+                    <li>Sandboxed environment (Pyodide)</li>
+                    <li>Key features:
+                        <ul>
+                            <li>Secure execution</li>
+                            <li>Auto-detection of dependencies</li>
+                            <li>Comprehensive output capture</li>
+                            <li>Async code support</li>
+                            <li>Detailed error reporting</li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+            <div class="slide-footer">
+                Slide 14
+            </div>
+        </div>
+
+        <!-- Slide 15 -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2>Code Example: HTTP Connection</h2>
+            </div>
+            <div class="slide-content">
+                <pre><code><span class="keyword">from</span> <span class="module">pydantic_ai</span> <span class="keyword">import</span> <span class="class">Agent</span>
+<span class="keyword">from</span> <span class="module">pydantic_ai.mcp</span> <span class="keyword">import</span> <span class="class">MCPServerHTTP</span>
+<span class="keyword">import</span> <span class="module">asyncio</span>
+
+<span class="keyword">async def</span> <span class="function">main</span>():
+    server = <span class="class">MCPServerHTTP</span>(url=<span class="string">'http://localhost:8080'</span>)
+    agent = <span class="class">Agent</span>(<span class="string">'openai:gpt-4'</span>, mcp_servers=[server])
+    <span class="keyword">async with</span> agent.run_mcp_servers():
+        result = <span class="keyword">await</span> agent.run(<span class="string">"What is the current time?"</span>)
+        <span class="function">print</span>(result.data)
+
+<span class="keyword">if</span> __name__ == <span class="string">"__main__"</span>:
+    asyncio.<span class="function">run</span>(main())</code></pre>
+            </div>
+            <div class="slide-footer">
+                Slide 15
+            </div>
+        </div>
+
+        <!-- Slide 16 -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2>Code Example: Stdio Connection</h2>
+            </div>
+            <div class="slide-content">
+                <pre><code><span class="keyword">from</span> <span class="module">pydantic_ai</span> <span class="keyword">import</span> <span class="class">Agent</span>
+<span class="keyword">from</span> <span class="module">pydantic_ai.mcp</span> <span class="keyword">import</span> <span class="class">MCPServerStdio</span>
+<span class="keyword">import</span> <span class="module">asyncio</span>
+
+<span class="keyword">async def</span> <span class="function">main</span>():
+    server = <span class="class">MCPServerStdio</span>(<span class="string">'npx'</span>, [<span class="string">'-y'</span>, <span class="string">'@pydantic/mcp-run-python'</span>, <span class="string">'stdio'</span>])
+    agent = <span class="class">Agent</span>(<span class="string">'openai:gpt-4'</span>, mcp_servers=[server])
+    <span class="keyword">async with</span> agent.run_mcp_servers():
+        result = <span class="keyword">await</span> agent.run(<span class="string">'Calculate 2 + 2 and print the result.'</span>)
+        <span class="function">print</span>(result.data) <span class="comment"># Expected output: "4"</span>
+
+<span class="keyword">if</span> __name__ == <span class="string">"__main__"</span>:
+    asyncio.<span class="function">run</span>(main())</code></pre>
+            </div>
+            <div class="slide-footer">
+                Slide 16
+            </div>
+        </div>
+
+        <!-- Slide 17 -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2>Hands-on Exercise</h2>
+            </div>
+            <div class="slide-content">
+                <p>Build simple PydanticAI agent with mcp-run-python</p>
+                <p>Steps:</p>
+                <ol>
+                    <li>Install: <code>pip install 'pydantic-ai-slim[mcp]'</code></li>
+                    <li>Import necessary classes</li>
+                    <li>Create MCPServerStdio instance</li>
+                    <li>Define PydanticAI agent with server</li>
+                    <li>Take math expressions as input</li>
+                    <li>Send to mcp-run-python for execution</li>
+                    <li>Print results</li>
+                </ol>
+            </div>
+            <div class="slide-footer">
+                Slide 17
+            </div>
+        </div>
+
+        <!-- Slide 18 -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2>Common Challenges</h2>
+            </div>
+            <div class="slide-content">
+                <ul>
+                    <li>Context window limitations</li>
+                    <li>Maintaining context across interactions</li>
+                    <li>Ensuring relevant & accurate retrieval</li>
+                    <li>Security concerns with external connections</li>
+                    <li>When to use HTTP vs. Stdio</li>
+                </ul>
+            </div>
+            <div class="slide-footer">
+                Slide 18
+            </div>
+        </div>
+
+        <!-- Slide 19 -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2>MCPServerHTTP vs. MCPServerStdio</h2>
+            </div>
+            <div class="slide-content">
+                <ul>
+                    <li>Stdio
+                        <ul>
+                            <li>Convenient for local development</li>
+                            <li>Works well with bundled servers like run-python</li>
+                            <li>PydanticAI manages server lifecycle</li>
+                        </ul>
+                    </li>
+                    <li>HTTP
+                        <ul>
+                            <li>Suitable for remote connections</li>
+                            <li>Works with separately managed servers</li>
+                            <li>Persistent connections via SSE</li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+            <div class="slide-footer">
+                Slide 19
+            </div>
+        </div>
+
+        <!-- Slide 20 -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2>Conclusion</h2>
+            </div>
+            <div class="slide-content">
+                <ul>
+                    <li>MCP addresses critical need in AI landscape</li>
+                    <li>Standardized framework for contextual AI</li>
+                    <li>PydanticAI's support makes it powerful framework</li>
+                    <li>mcp-run-python offers convenient extension capabilities</li>
+                </ul>
+            </div>
+            <div class="slide-footer">
+                Slide 20
+            </div>
+        </div>
+
+        <!-- Slide 21 -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2>Further Resources</h2>
+            </div>
+            <div class="slide-content">
+                <ul>
+                    <li>PydanticAI documentation: ai.pydantic.dev</li>
+                    <li>MCP specification & SDKs</li>
+                    <li>MCP servers repository: github.com/modelcontextprotocol/servers</li>
+                    <li>PydanticAI GitHub: github.com/pydantic/pydantic-ai</li>
+                </ul>
+            </div>
+            <div class="slide-footer">
+                Slide 21
+            </div>
+        </div>
+
+        <!-- Slide 22 -->
+        <div class="slide">
+            <div class="slide-header">
+                <h2>Q&A</h2>
+            </div>
+            <div class="slide-content">
+                <p style="text-align: center; font-size: 32px;">Questions & Answers</p>
+            </div>
+            <div class="slide-footer">
+                Slide 22
+            </div>
+        </div>
+    </div>
+</body>
+</html>
