@@ -5,4 +5,6 @@ python-dotenv
 pydantic-ai
 google-generativeai
 gradio>=5.9.0
-nest-asyncio 
+nest-asyncio
+mcp
+pydantic-ai[mcp]
