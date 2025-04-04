@@ -11,12 +11,6 @@ load_dotenv(override=True)
 
 servers = [
     MCPServerStdio('npx', ['-y', '@pydantic/mcp-run-python', 'stdio']),
-    MCPServerStdio('npx',  [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "/Users",
-        "/path/to/other/allowed/dir"
-      ], "stdio")
 ]
 
 model = OpenAIModel('gpt-4o', provider=OpenAIProvider(api_key=os.getenv('OPENAI_API_KEY')))
@@ -24,7 +18,7 @@ model = OpenAIModel('gpt-4o', provider=OpenAIProvider(api_key=os.getenv('OPENAI_
 agent = Agent(
     model=model,
     system_prompt="You are a local filesystem assistant.",
-    mcp_servers=[servers]
+    mcp_servers=servers
 )
 
 async def main():
