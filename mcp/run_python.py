@@ -1,4 +1,4 @@
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.mcp import MCPServerStdio
 from pydantic_ai.providers.openai import OpenAIProvider
@@ -11,12 +11,7 @@ load_dotenv(override=True)
 
 servers = [
     MCPServerStdio('npx', ['-y', '@pydantic/mcp-run-python', 'stdio']),
-    MCPServerStdio('npx',  [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "/Users",
-        "/path/to/other/allowed/dir"
-      ], "stdio")
+    MCPServerStdio('npx', ['-y', '@modelcontextprotocol/server-filesystem','/Users/vojislavpavasovic/Agents/agents'])
 ]
 
 model = OpenAIModel('gpt-4o', provider=OpenAIProvider(api_key=os.getenv('OPENAI_API_KEY')))
@@ -24,7 +19,7 @@ model = OpenAIModel('gpt-4o', provider=OpenAIProvider(api_key=os.getenv('OPENAI_
 agent = Agent(
     model=model,
     system_prompt="You are a local filesystem assistant.",
-    mcp_servers=[servers]
+    mcp_servers=servers
 )
 
 async def main():
@@ -56,4 +51,3 @@ async def main():
 if __name__ == '__main__':
     asyncio.run(main())    
     
-# add conversation history and the chat loop
