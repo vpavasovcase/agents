@@ -5,6 +5,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from dotenv import load_dotenv
 import asyncio
 import os
+import aioconsole
 
 
 load_dotenv(override=True)
@@ -35,14 +36,12 @@ async def main():
     print("Type 'exit', 'quit', or 'bye' to end the conversation")
     print("===============================")
 
-    # List to store conversation history
     conversation_history = []
 
     async with agent.run_mcp_servers():
         while True:
-            user_input = input("\n[You] ")
+            user_input = await aioconsole.ainput("\n[You] ")
             
-            # Check if user wants to exit
             if user_input.lower() in ['exit', 'quit', 'bye', 'goodbye']:
                 print("Goodbye!")
                 break
@@ -50,8 +49,6 @@ async def main():
             try:
                 result = await agent.run(user_input, message_history=conversation_history)
                 print('[Assistant] ', result.data)
-                
-                # Store the messages from this interaction in the conversation history
                 conversation_history = result.all_messages()
             except Exception as e:
                 print(f"\nError: {e}")
