@@ -11,14 +11,22 @@ load_dotenv(override=True)
 
 servers = [
     MCPServerStdio('npx', ['-y', '@pydantic/mcp-run-python', 'stdio']),
-    MCPServerStdio('npx', ['-y', '@modelcontextprotocol/server-filesystem','/Users/vojislavpavasovic/Agents/agents'])
+
+    MCPServerStdio('uv', [
+      "--directory",
+      "parent_of_servers_repo/servers/src/sqlite",
+      "run",
+      "mcp-server-sqlite",
+      "--db-path",
+      "~/test.db"
+    ])
 ]
 
 model = OpenAIModel('gpt-4o', provider=OpenAIProvider(api_key=os.getenv('OPENAI_API_KEY')))
 
 agent = Agent(
     model=model,
-    system_prompt="You are a local filesystem assistant.",
+    system_prompt="You are an assistant. You can use a tool to run python.",
     mcp_servers=servers
 )
 
