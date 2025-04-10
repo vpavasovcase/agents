@@ -6,21 +6,13 @@ from dotenv import load_dotenv
 import asyncio
 import os
 import aioconsole
+import os
 
 
 load_dotenv(override=True)
 
 servers = [
     MCPServerStdio('npx', ['-y', '@pydantic/mcp-run-python', 'stdio']),
-
-    MCPServerStdio('uv', [
-      "--directory",
-      "parent_of_servers_repo/servers/src/sqlite",
-      "run",
-      "mcp-server-sqlite",
-      "--db-path",
-      "~/test.db"
-    ])
 ]
 
 model = OpenAIModel('gpt-4o', provider=OpenAIProvider(api_key=os.getenv('OPENAI_API_KEY')))
