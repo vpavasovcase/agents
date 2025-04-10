@@ -1,0 +1,32 @@
+# Git
+.git
+.gitignore
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+
+# Docker files
+.dockerignore
+Dockerfile
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local data files
+.logfire/ 
