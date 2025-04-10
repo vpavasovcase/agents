@@ -1,98 +1,67 @@
+# Setup Instructions For Windows Users
 
-# Development Scripts Guide
+1. Install Docker: https://docs.docker.com/desktop/setup/install/windows-install
 
-This repository includes helper scripts to streamline your Docker-based development workflow. These scripts make it easy to start services and run commands in Docker containers without remembering long Docker commands.
-
-## Available Scripts
-
-There are two sets of scripts available:
-- **Bash scripts** (`.sh`) for macOS and Linux users
-- **PowerShell scripts** (`.ps1`) for Windows users
-
-## Setup Instructions For Windows Users
-
-Install Docker: https://docs.docker.com/desktop/setup/install/windows-install
-
-If you didn't already, clone the repo:
-
+2. Clone the repo:
 ```powershell
 git clone https://github.com/vpavasovcase/agents.git
 cd agents
 ```
 
-Make a .env file in the root of the repo:
+3. Make a .env file in the root of the repo:
 ```powershell
 cp .env.example .env
 ```
-Add API keys to the .env file.
 
-### Starting the Services
-```powershell
-docker-compose up -d
-```
-### Stoping the Services
-```powershell
-docker-compose down
-```
+4. Add your API keys to the .env file
 
-### Working with the Application Container
+## VS Code Development (Recommended)
 
-If you're unable to run PowerShell scripts, you may need to adjust your execution policy:
+1. Install VS Code and the "Dev Containers" extension
+2. Open the project folder in VS Code
+3. Press F1 (or Ctrl+Shift+P), type "Dev Containers: Reopen in Container" and select it
+4. VS Code will restart and connect to your development container
 
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
+Now you can:
+- Edit code with full IntelliSense
+- Debug with breakpoints
+- Use the integrated terminal (automatically inside the container)
+- Run Python files directly from VS Code
 
-```powershell
-# Open a bash shell in the app container
-.\app.ps1
+## Common Issues & Solutions
 
-# Run a specific command in the app container
-.\app.ps1 python -m my_script.py
+1. **Docker Desktop not starting?**
+   - Make sure WSL2 is installed and enabled
+   - Restart your computer after Docker installation
 
-# Install a new Python package
-.\app.ps1 pip install pandas
-```
+2. **Permission denied errors?**
+   - Run PowerShell as Administrator
+   - Or use: `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
 
-## Objasnjenje
+3. **VS Code can't find Python?**
+   - Make sure you're inside the Dev Container (check bottom-left corner)
+   - If needed, select Python interpreter: Press F1 -> "Python: Select Interpreter"
 
-Docker kontejner je kao da unutar svog kompa imate još jedan komp. Taj komp upalite sa:
-```powershell
-docker-compose up -d
-```
-a ugasite ga sa:
-```powershell
-docker-compose down
-```
+4. **Container not starting?**
+   - Check if Docker Desktop is running
+   - Try: `docker-compose down` then `docker-compose up -d`
 
+## Important Notes
 
-U terminalu radite sa svojim kompom kao inače, a da bi radili na docker kompu, morate:
+- You don't need Python or any other development tools on your computer - everything runs in Docker
+- Required on your computer:
+  - Docker Desktop
+  - Git
+  - VS Code with Dev Containers extension
+  - Slack app
+  - AnyDesk
 
-1. ili pokenut terminal u docker kompu sa
-    ```powershell
-    .\app.ps1
-    ```
-    onda u tom terminalu pisati komandi koliko god želite, npr:     
-    ```powershell
-    python mcp/run_python.py
-    python mcp/run.py
-    pip install pandas
-    ...
-    ```
-    Kada ste završili raditi na docker kompu, možete ga zatvoriti sa
-    ```powershell
-    exit
-    ```
-2. ili pokrenuti neku komandu direktno u docker kompu sa
-    ```powershell
-    .\app.ps1 python mcp/run_python.py
-    ```
-    U ovom slučaju ne ulazite u docker komp, nego samo pokrenete tu komandu u njemu ali ostajete u svom kompu.
+- The Docker container runs Ubuntu Linux, so use Linux (Debian) commands in the container terminal, not Windows commands
 
-## Napomene
+- When using AI coding assistants, mention we're using a Docker development environment
 
-- sada ne trebate pokretati venv
-- sve šta nam treba je već instalirano na docker kompu:
-    - python, git, pip, pipx, uv, uvx, node.js, docker (unutar docker kompa se isto mogu pokretati docker kontejneri)
-- ako vam treba još nešto, javite mi pa instaliram
-- vi na svom kompu ne trebate instalirati ništa osim dockera, slack appa i anydeska
+## Need Help?
+
+- Check the error message in the VS Code terminal
+- Ask in the Slack channel
+- Share your screen via AnyDesk if needed

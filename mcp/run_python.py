@@ -6,8 +6,6 @@ from dotenv import load_dotenv
 import asyncio
 import os
 import aioconsole
-import os
-
 
 load_dotenv(override=True)
 
