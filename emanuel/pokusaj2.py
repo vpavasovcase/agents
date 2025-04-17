@@ -40,7 +40,7 @@ if not OPENAI_API_KEY:
 
 # *** IMPORTANT: Update this path to the directory where your files are located ***
 # This path will be used by the MCP filesystem server
-BASE_WORKING_DIR = Path("/app/agents/emanuel") # ADJUST THIS PATH
+BASE_WORKING_DIR = Path("/app/emanuel") # ADJUST THIS PATH
 
 TEMPLATE_FILENAME = "Predložak Dodatka  ugovoru _ UVEĆANA UPLATA_DJELOMIČNA OTPLATA KREDITA _bez izmjene roka _ kraći rok.docx"
 OUTPUT_FILENAME = "POPUNJEN_Dodatak_ugovoru_Barbara_Stazic.docx"
@@ -546,7 +546,7 @@ async def main():
     for key, value in extracted_data.items():
         print(f"  {key}: {value}")
     print("--------------------------")
-
+    print("Pozdrav! Što mogu učiniti za vas danas?")
     template_path_mcp = TEMPLATE_FILENAME # Path relative to BASE_WORKING_DIR
     output_path_mcp = OUTPUT_FILENAME   # Path relative to BASE_WORKING_DIR
 
@@ -583,7 +583,7 @@ async def main():
         async with agent.run_mcp_servers():
             result = await agent.run(prompt)
             print("\n[Agent Result Raw Data]")
-            print(result.data) # Agent's textual response based on tool execution
+            print(result.output) # Agent's textual response based on tool execution
 
             # We expect the python_executor tool to print JSON output.
             # The agent *should* relay this, but we might need to parse the tool output directly
