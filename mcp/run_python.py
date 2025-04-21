@@ -11,13 +11,18 @@ load_dotenv(override=True)
 
 servers = [
     MCPServerStdio('npx', ['-y', '@pydantic/mcp-run-python', 'stdio']),
+    MCPServerStdio('npx', [
+              "-y",
+              "@modelcontextprotocol/server-filesystem",
+              "/app"
+            ]),
 ]
 
 model = OpenAIModel('gpt-4o', provider=OpenAIProvider(api_key=os.getenv('OPENAI_API_KEY')))
 
 agent = Agent(
     model=model,
-    system_prompt="You are an assistant. You can use a tool to run python.",
+    system_prompt="You are an assistant. You can use a tool to run python and u can access folder on the computer.",
     mcp_servers=servers
 )
 

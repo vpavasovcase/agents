@@ -9,6 +9,8 @@ This repository has been dockerized to make it easy to run in any environment. T
 - Node.js and npm (which includes npx)
 - Docker CLI
 - All Python dependencies from requirements.txt
+- Automatic loading of environment variables from .env file
+- Automatic installation of Python dependencies on container startup
 
 ## Building the Docker Image
 
@@ -62,7 +64,10 @@ The Docker CLI is included in the image, and the Docker socket is mounted from t
 - The `.dockerignore` file excludes unnecessary files from the build context.
 - The base image is Ubuntu 22.04, which provides a stable foundation.
 - All dependencies are installed during the image build process, making it ready to use immediately.
-- To customize the image further, modify the `Dockerfile` as needed. 
+- Python dependencies are also automatically installed when the container starts, ensuring they're always up-to-date.
+- To customize the image further, modify the `Dockerfile` as needed.
+- Environment variables from your `.env` file are automatically loaded when the container starts.
+- The container uses a custom entrypoint script that sources the `.env` file and exports all variables to the container environment.
 
 
 # Development Scripts Guide
@@ -105,43 +110,43 @@ docker-compose down
 
 ```powershell
 # Open a bash shell in the app container
-.\app.ps1
+.\scripts\app.ps1
 
 # Run a specific command in the app container
-.\app.ps1 python -m my_script.py
+.\scripts\app.ps1 python -m my_script.py
 
 # Install a new Python package
-.\app.ps1 pip install pandas
+.\scripts\app.ps1 pip install pandas
 ```
 
 ### Working with the Database Container
 
 ```powershell
 # Open a bash shell in the PostgreSQL container
-.\db.ps1
+.\scripts\db.ps1
 
 # Run a PostgreSQL backup command
-.\db.ps1 pg_dump -U postgres > backup.sql
+.\scripts\db.ps1 pg_dump -U postgres > backup.sql
 ```
 
 ### Direct PostgreSQL Access
 
 ```powershell
 # Open an interactive PostgreSQL shell
-.\psql.ps1
+.\scripts\psql.ps1
 
 # Run a specific SQL query
-.\psql.ps1 -c "SELECT * FROM users;"
+.\scripts\psql.ps1 -c "SELECT * FROM users;"
 
 # Run a SQL file
-.\psql.ps1 -f schema.sql
+.\scripts\psql.ps1 -f schema.sql
 ```
 ## For macOS and Linux Users
 
 ### Starting the Services
 
 ```bash
-./start.sh
+./scripts/start.sh
 ```
 
 This script:
@@ -153,36 +158,36 @@ This script:
 
 ```bash
 # Open a bash shell in the app container
-./app.sh
+./scripts/app.sh
 
 # Run a specific command in the app container
-./app.sh python -m my_script.py
+./scripts/app.sh python -m my_script.py
 
 # Install a new Python package
-./app.sh pip install pandas
+./scripts/app.sh pip install pandas
 ```
 
 ### Working with the Database Container
 
 ```bash
 # Open a bash shell in the PostgreSQL container
-./db.sh
+./scripts/db.sh
 
 # Run a PostgreSQL backup command
-./db.sh pg_dump -U postgres > backup.sql
+./scripts/db.sh pg_dump -U postgres > backup.sql
 ```
 
 ### Direct PostgreSQL Access
 
 ```bash
 # Open an interactive PostgreSQL shell
-./psql.sh
+./scripts/psql.sh
 
 # Run a specific SQL query
-./psql.sh -c "SELECT * FROM users;"
+./scripts/psql.sh -c "SELECT * FROM users;"
 
 # Run a SQL file
-./psql.sh -f schema.sql
+./scripts/psql.sh -f schema.sql
 ```
 
 ## Execution Permissions
@@ -192,7 +197,7 @@ This script:
 If you get a "permission denied" error, you may need to make the scripts executable:
 
 ```bash
-chmod +x start.sh app.sh db.sh psql.sh
+chmod +x scripts/*.sh
 ```
 
 ### On Windows
@@ -210,8 +215,8 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 If you see an error like "Connection refused" or "Container not running", make sure you've started the containers first:
 
 ```bash
-./start.sh  # For macOS/Linux
-.\start.ps1  # For Windows
+./scripts/start.sh  # For macOS/Linux
+.\scripts\start.ps1  # For Windows
 ```
 
 ### PowerShell Script Execution
@@ -219,12 +224,9 @@ If you see an error like "Connection refused" or "Container not running", make s
 If Windows displays security warnings, you may need to unblock the files:
 
 ```powershell
-Unblock-File .\start.ps1
-Unblock-File .\app.ps1
-Unblock-File .\db.ps1
-Unblock-File .\psql.ps1
+Get-ChildItem .\scripts\*.ps1 | Unblock-File
 ```
 
 ### Docker Not Installed
 
-If you see "docker-compose: command not found", make sure Docker Desktop (or Docker Engine + Docker Compose) is installed and running on your system. 
+If you see "docker-compose: command not found", make sure Docker Desktop (or Docker Engine + Docker Compose) is installed and running on your system.
