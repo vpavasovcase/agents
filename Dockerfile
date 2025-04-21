@@ -57,5 +57,13 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 # Set PATH to include pipx installed binaries
 ENV PATH="/root/.local/bin:$PATH"
 
+# Copy scripts
+COPY scripts/docker-entrypoint.sh /usr/local/bin/
+COPY scripts/install-dependencies.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh /usr/local/bin/install-dependencies.sh
+
+# Set entrypoint
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+
 # Set a default command
-CMD ["/bin/bash"] 
+CMD ["/bin/bash"]
