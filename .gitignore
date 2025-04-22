@@ -137,9 +137,9 @@ env.bak/
 venv.bak/
 .DS_Store
 
-# Spyder project settings
-.spyderproject
-.spyproject
+# Credentials
+credentials.json
+token.json
 
 # Rope project settings
 .ropeproject
