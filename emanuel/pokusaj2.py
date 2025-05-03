@@ -42,7 +42,7 @@ if not OPENAI_API_KEY:
 # This path will be used by the MCP filesystem server
 BASE_WORKING_DIR = Path("/app/emanuel") # ADJUST THIS PATH
 
-TEMPLATE_FILENAME = "Predložak Dodatka  ugovoru _ UVEĆANA UPLATA_DJELOMIČNA OTPLATA KREDITA _bez izmjene roka _ kraći rok.docx"
+TEMPLATE_FILENAME = "template_dodatciugovoru.docx"
 OUTPUT_FILENAME = "POPUNJEN_Dodatak_ugovoru_Barbara_Stazic.docx"
 
 # Source documents (relative to BASE_WORKING_DIR) - We won't read them directly here,
