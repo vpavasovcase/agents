@@ -20,7 +20,7 @@ logfire.instrument_pydantic() # Instrumentiraj Pydantic modele
 logfire.info("Agent started")
 
 # --- Folder Structure (adjust as needed for your Docker mapping) ---
-DOCS_BASE_PATH = os.getenv('DOCS_BASE_PATH', '/app/docs') # Default for Docker
+DOCS_BASE_PATH = os.getenv('DOCS_BASE_PATH', '/app/emanuel/docs') 
 
 def get_credit_sources_path(credit_number: str) -> str:
     return os.path.join(DOCS_BASE_PATH, 'sources', credit_number)
@@ -78,11 +78,11 @@ servers = [
     # Assume the docs folder is mounted at /app/docs in the container
     MCPServerStdio('npx', ['-y', '@modelcontextprotocol/server-filesystem', DOCS_BASE_PATH]),
     # Office Word MCP Server using uvx
-    MCPServerStdio('uvx', ['@modelcontextprotocol/server-office-word', 'stdio']),
+    MCPServerStdio( 'uvx', ['--from', 'office-word-mcp-server', 'word_mcp_server'] ),
 ]
 
 # --- Agent Definition ---
-model = OpenAIModel('gpt-4o', provider=OpenAIProvider(api_key=os.getenv('OPENAI_API_KEY')))
+model = OpenAIModel('gpt-4.1-mini', provider=OpenAIProvider(api_key=os.getenv('OPENAI_API_KEY')))
 
 system_prompt = f"""
 You are a banking document automation agent. Your primary task is to fill out a standard bank document template (Dodatak Ugovoru) using data extracted from other source documents provided for a specific credit number.
@@ -123,6 +123,7 @@ agent = Agent(
     system_prompt=system_prompt,
     mcp_servers=servers
 )
+
 
 # --- Main CLI Loop ---
 async def main():
