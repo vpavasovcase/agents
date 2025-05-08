@@ -13,6 +13,8 @@ services:
     tty: true
     depends_on:
       - postgres
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/postgres
       - DATABASE_HOST=postgres
@@ -33,4 +35,4 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
 volumes:
-  postgres_data: 
+  postgres_data:
