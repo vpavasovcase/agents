@@ -18,7 +18,7 @@ servers = [
             ]),
 ]
 
-model = OpenAIModel('gpt-4o', provider=OpenAIProvider(api_key=os.getenv('OPENAI_API_KEY')))
+model = OpenAIModel('gpt-4.1-mini', provider=OpenAIProvider(api_key=os.getenv('OPENAI_API_KEY')))
 
 agent = Agent(
     model=model,
