@@ -2,3 +2,14 @@ pydantic-ai
 python-dotenv
 logfire
 pydantic
+httpx
+devtools
+google-generativeai
+gradio>=5.9.0
+nest-asyncio
+aioconsole
+
+poppler-utils
+pytesseract 
+pdf2image
+ tesseract-ocr-hrv

@@ -9,6 +9,7 @@ from pydantic_ai import Agent, DocumentUrl, BinaryContent
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.mcp import MCPServerStdio
 from pydantic_ai.providers.openai import OpenAIProvider
+from datetime import datetime
 
 # Load environment variables from .env file (useful for local testing, Docker handles this)
 load_dotenv(override=True)
@@ -43,9 +44,10 @@ class Participant(BaseModel):
 
 class ContractData(BaseModel):
     korisnik_kredita: Participant = Field(..., description="Podaci o Korisniku kredita.")
-    solidarni_duznik: Optional[Participant] = Field(None, description="Podaci o Solidarnom dužniku, ako postoji.")
-    solidarni_jamci: Optional[List[Participant]] = Field(default_factory=list, description="Popis Solidarnih jamaca, ako postoje.")
-    datum_dodatka_ddmmyyyy: str = Field(..., description="Datum zaključenja Dodatka u formatu DD.MM.GGGG.")
+    solidarni_duznik: str = "Ne"
+    solidarni_jamci: str = "Ne"
+    datum_dodatka_ddmmyyyy: str = datetime.today().strftime('%d.%m.%Y')
+
     datum_dodatka_slovima: str = Field(..., description="Datum zaključenja Dodatka ispisan slovima.")
     mjesto_dodatka: str = Field(..., description="Mjesto zaključenja Dodatka.")
     broj_dodatka: int = Field(..., description="Redni broj Dodatka Ugovoru.")
@@ -114,7 +116,8 @@ Your workflow is as follows:
 * When asking the user for clarification, provide enough context from the documents or the template so they can understand the question.
 * Be precise when using tool calls. Refer to the documentation for the filesystem and officeword MCP servers for exact command names and parameters.
 * Use Logfire to log your steps and any issues encountered.
-
+* Datum zaključenja Dodatka ispisan slovima i datum zaključenja dodatka u formatu DD.MM.GGGG. treba biti današnji datum, koristi mcp server run_python za dobiti datum.
+* opcija iz članka 2 primjenjiva za svaki dodatak je smanjenje glavnice.
 Begin by processing the user's command and attempting to extract the credit number.
 """
 
