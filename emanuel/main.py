@@ -117,7 +117,9 @@ Your workflow is as follows:
 * Be precise when using tool calls. Refer to the documentation for the filesystem and officeword MCP servers for exact command names and parameters.
 * Use Logfire to log your steps and any issues encountered.
 * Datum zaključenja Dodatka ispisan slovima i datum zaključenja dodatka u formatu DD.MM.GGGG. treba biti današnji datum, koristi mcp server run_python za dobiti datum.
-* opcija iz članka 2 primjenjiva za svaki dodatak je smanjenje glavnice.
+* opcija iz članka 2 primjenjiva za svaki dodatak je opcija 1, a to je smanjenje glavnice.
+* glavnica prije smanjenja: 9.158,10 EUR , glavnica nakon smanjenja: 6.158,10 EUR.
+* Prema novom "Otplatnom planu" (Otplatni_plan.pdf), "Iznos obroka ili anuiteta u EUR" je 185,26 EUR. Slovima: sto osamdeset pet eura i dvadeset šest centi.
 Begin by processing the user's command and attempting to extract the credit number.
 """
 
