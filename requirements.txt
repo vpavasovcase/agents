@@ -7,3 +7,7 @@ google-generativeai
 gradio>=5.9.0
 nest-asyncio
 aioconsole
+aiohttp
+async-timeout
+pydantic-ai-slim[duckduckgo]
+pydantic[email]
