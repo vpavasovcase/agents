@@ -9,6 +9,9 @@ from pydantic_ai import Agent, DocumentUrl, BinaryContent
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.mcp import MCPServerStdio
 from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.providers.deepseek import DeepSeekProvider
+from pydantic_ai.models.groq import GroqModel
+from pydantic_ai.providers.groq import GroqProvider
 from datetime import datetime
 
 # Load environment variables from .env file (useful for local testing, Docker handles this)
@@ -19,6 +22,7 @@ load_dotenv(override=True)
 logfire.configure() # Osnovna konfiguracija
 logfire.instrument_pydantic() # Instrumentiraj Pydantic modele
 logfire.info("Agent started")
+Agent.instrument_all() # Instrumentiraj sve agente
 
 # --- Folder Structure (adjust as needed for your Docker mapping) ---
 DOCS_BASE_PATH = os.getenv('DOCS_BASE_PATH', '/app/emanuel/docs') 
@@ -84,7 +88,9 @@ servers = [
 ]
 
 # --- Agent Definition ---
-model = OpenAIModel('gpt-4.1-mini', provider=OpenAIProvider(api_key=os.getenv('OPENAI_API_KEY')))
+model = GroqModel(
+    'llama-3.3-70b-versatile', provider=GroqProvider(api_key=os.getenv('GROQ_API_KEY'))
+)
 
 system_prompt = f"""
 You are a banking document automation agent. Your primary task is to fill out a standard bank document template (Dodatak Ugovoru) using data extracted from other source documents provided for a specific credit number.
@@ -108,8 +114,8 @@ Your workflow is as follows:
 8.  Populate the `ContractData` Pydantic model with the extracted information.
 9.  If you cannot find a required piece of information, or if there are conditional fields (like in Članak 2) where the applicable condition is not clear from the documents, use the `MissingDataQuestion` Pydantic model to ask the user for clarification. Respond with an `AgentResponse` with status 'missing_data' and the question.
 10. If you have successfully extracted all required information or received it from the user, prepare the `ContractData` model.
-11. Use the Office Word MCP server tool (`officeword.fill_template`) to create a new `.docx` document based on the template (`template.docx`) and the extracted data. You will need to provide the template path, the output path (`{DOCS_BASE_PATH}/completed/[broj_kredita].docx`), and a dictionary of placeholders and their values based on your `ContractData`.
-12. Save the completed document if the officeword tool requires it, using `filesystem.write` if necessary.
+11. Use the Office Word MCP server tool to create a new `.docx` document based on the template (`template.docx`) filled with the extracted data.
+12. Save the completed document.
 13. Respond with an `AgentResponse` with status 'success' and a message indicating the document has been created. If there was an error, respond with status 'error'.
 
 **Important Considerations:**

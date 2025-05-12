@@ -7,3 +7,7 @@ google-generativeai
 gradio>=5.9.0
 nest-asyncio
 aioconsole
+
+poppler-utils
+pytesseract 
+pdf2image

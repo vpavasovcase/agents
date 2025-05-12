@@ -12,4 +12,3 @@ aioconsole
 poppler-utils
 pytesseract 
 pdf2image
- tesseract-ocr-hrv
