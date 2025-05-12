@@ -1,0 +1,196 @@
+import asyncio
+from typing import List, Dict, Any, Optional, Tuple
+import logging
+from models import SearchCriteria
+import aiohttp
+from duckduckgo_search import DDGS
+import re
+import json
+import time
+from urllib.parse import urlparse
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('search_system.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+def log_to_file(level: str, message: str, **kwargs):
+    """Log to file with additional context."""
+    log_entry = {
+        'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+        'level': level,
+        'message': message,
+        'component': 'websearch_agent',
+        **kwargs
+    }
+    
+    with open('detailed_logs.jsonl', 'a', encoding='utf-8') as f:
+        f.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
+    
+    if level == 'ERROR':
+        logger.error(message)
+    else:
+        logger.info(message)
+
+class WebSearchAgent:
+    ECOMMERCE_SITES = [
+        # Croatian sites
+        'nabava.net',
+        'jeftinije.hr',
+        'links.hr',
+        'hgspot.hr',
+        'instar-informatika.hr',
+        'protis.hr',
+        'sancta-domenica.hr',
+        'elipso.hr',
+        'emmezeta.hr',
+        'mikronis.hr',
+        # International sites
+        'amazon.de',
+        'computeruniverse.net'
+    ]
+    
+    def __init__(self):
+        self.session: Optional[aiohttp.ClientSession] = None
+        self.memory: Dict[str, Any] = {}
+        self.ddgs = DDGS()
+        log_to_file('INFO', 'websearch_agent_initialized')
+
+    async def initialize(self):
+        """Initialize the web search agent."""
+        if not self.session:
+            timeout = aiohttp.ClientTimeout(total=30)
+            self.session = aiohttp.ClientSession(timeout=timeout)
+            log_to_file('INFO', 'aiohttp_session_initialized')
+
+    async def close(self):
+        """Close the web search agent."""
+        if not self.session:
+            return
+        await self.session.close()
+        self.session = None
+        log_to_file('INFO', 'aiohttp_session_closed')
+
+    def clear_memory(self):
+        """Clear search cache."""
+        self.memory.clear()
+        log_to_file('INFO', 'memory_cleared')
+
+    async def search_shops(self, criteria: SearchCriteria) -> List[str]:
+        """Search for products matching the criteria."""
+        try:
+            log_to_file('INFO', 'starting_search', query=criteria.query)
+            
+            all_results = set()
+            query = criteria.query
+
+            # Try different search approaches
+            attempts = [
+                (query, 'hr-HR'),                           # Original query with HR region
+                (query, None),                              # Original query without region
+                (f"kupiti {query}", 'hr-HR'),              # Buy query in Croatian
+                (f"cijena {query}", 'hr-HR'),              # Price query in Croatian
+                (f"{query} price", None),                   # Price query in English
+                (f"{query} shop", None),                    # Shop query in English
+            ]
+            
+            # Try each search pattern
+            for search_query, region in attempts:
+                if len(all_results) >= 10:  # If we have enough results
+                    break
+                    
+                try:
+                    # Prepare search arguments
+                    kwargs = {'max_results': 10}
+                    if region:
+                        kwargs['region'] = region
+                    
+                    # Try searching first without site restriction
+                    results = self.ddgs.text(search_query, **kwargs)
+                    if results:
+                        for result in results:
+                            url = result.get('link', '')
+                            if any(site in url.lower() for site in self.ECOMMERCE_SITES):
+                                all_results.add(url)
+                    
+                    # If we don't have enough results, try site-specific searches
+                    if len(all_results) < 5:
+                        for site in ['nabava.net', 'jeftinije.hr', 'links.hr']:
+                            site_query = f"{search_query} site:{site}"
+                            results = self.ddgs.text(site_query, **kwargs)
+                            
+                            if results:
+                                for result in results:
+                                    url = result.get('link', '')
+                                    if site in url.lower():
+                                        all_results.add(url)
+                                        
+                except Exception as e:
+                    log_to_file('WARNING', 'search_attempt_failed', 
+                              query=search_query, error=str(e))
+                    continue
+
+                await asyncio.sleep(0.5)  # Small delay between attempts
+            
+            # Convert results to list and log
+            results = list(all_results)
+            log_to_file('INFO', 'search_complete',
+                       num_results=len(results),
+                       sites=[urlparse(url).netloc for url in results[:3]])
+            
+            return results[:10]  # Return top 10 results
+            
+        except Exception as e:
+            log_to_file('ERROR', 'search_failed', error=str(e))
+            return []
+
+    async def get_similar_products(self, product_url: str) -> List[str]:
+        """Find similar products."""
+        try:
+            domain = urlparse(product_url).netloc
+            query = f"site:{domain} related"
+            
+            results = []
+            search_results = self.ddgs.text(
+                query,
+                region='hr-HR',
+                max_results=10
+            )
+            
+            if search_results:
+                for result in search_results:
+                    url = result.get('link', '')
+                    if url != product_url:
+                        results.append(url)
+            
+            return results[:5]  # Return top 5 similar results
+            
+        except Exception as e:
+            log_to_file('ERROR', 'similar_products_failed', error=str(e))
+            return []
+
+    async def filter_results(self, urls: List[str], criteria: SearchCriteria) -> List[str]:
+        """Filter search results based on criteria."""
+        if not urls:
+            return []
+            
+        try:
+            filtered = [url for url in urls 
+                       if any(site in url.lower() 
+                            for site in self.ECOMMERCE_SITES)]
+            
+            log_to_file('INFO', 'results_filtered',
+                       input=len(urls),
+                       output=len(filtered))
+            
+            return filtered
+            
+        except Exception as e:
+            log_to_file('ERROR', 'filtering_failed', error=str(e))
+            return []

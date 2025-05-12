@@ -1,0 +1,572 @@
+import asyncio
+from typing import List, Dict, Any, Optional, Tuple
+import logging
+from models import SearchCriteria
+import aiohttp
+from duckduckgo_search import DDGS
+import re
+import json
+import time
+from urllib.parse import urlparse
+from bs4 import BeautifulSoup, Tag
+from langdetect import detect, LangDetectException
+from deep_translator import GoogleTranslator
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('search_system.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+def log_to_file(level: str, message: str, **kwargs):
+    """Log to file with additional context."""
+    log_entry = {
+        'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+        'level': level,
+        'message': message,
+        'component': 'websearch_agent',
+        **kwargs
+    }
+    
+    with open('detailed_logs.jsonl', 'a', encoding='utf-8') as f:
+        f.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
+    
+    if level == 'ERROR':
+        logger.error(message)
+    else:
+        logger.info(message)
+
+class WebSearchAgent:
+    ECOMMERCE_SITES = [
+        # Croatian sites
+        'nabava.net',
+        'jeftinije.hr',
+        'hgspot.hr',
+        'links.hr',
+        'instar-informatika.hr',
+        'protis.hr',
+        'sancta-domenica.hr',
+        'elipso.hr',
+        'emmezeta.hr',
+        'mikronis.hr',
+        # International sites with shipping to Croatia
+        'amazon.de',
+        'computeruniverse.net'
+    ]
+    
+    REVIEW_SITES = [
+        'rtings.com',
+        'techradar.com',
+        'cnet.com',
+        'theverge.com',
+        'tomshardware.com',
+        'digitaltrends.com',
+        'pcmag.com',
+        'trustedreviews.com'
+    ]
+
+    def __init__(self):
+        self.session: aiohttp.ClientSession | None = None
+        self.memory: Dict[str, Any] = {}
+        self.ddgs = DDGS()
+        log_to_file('INFO', 'websearch_agent_initialized')
+
+    async def initialize(self):
+        """Initialize the web search agent."""
+        if not self.session:
+            timeout = aiohttp.ClientTimeout(total=30)
+            self.session = aiohttp.ClientSession(timeout=timeout)
+            log_to_file('INFO', 'aiohttp_session_initialized')
+
+    async def ensure_session(self):
+        if not self.session:
+            await self.initialize()
+
+    async def close(self):
+        """Close the web search agent."""
+        if self.session:
+            await self.session.close()
+            self.session = None
+            log_to_file('INFO', 'aiohttp_session_closed')
+
+    def clear_memory(self) -> None:
+        """Clear the agent's cached data."""
+        self.memory.clear()
+        log_to_file('INFO', 'memory_cleared')
+
+    def _clean_price(self, price_str: str) -> Optional[float]:
+        """Extract and convert price to float."""
+        if not price_str:
+            return None
+            
+        try:
+            # Remove currency symbols and other irrelevant characters
+            cleaned = re.sub(r'[^\d.,]', '', price_str)
+            
+            # Handle different number formats
+            if ',' in cleaned and '.' in cleaned:
+                if cleaned.find(',') < cleaned.find('.'):
+                    # Format: 1,234.56
+                    cleaned = cleaned.replace(',', '')
+                else:
+                    # Format: 1.234,56
+                    cleaned = cleaned.replace('.', '').replace(',', '.')
+            elif ',' in cleaned:
+                if len(cleaned.split(',')[1]) == 2:
+                    # Likely a decimal comma
+                    cleaned = cleaned.replace(',', '.')
+                else:
+                    # Likely a thousands separator
+                    cleaned = cleaned.replace(',', '')
+            
+            # Convert to float
+            price = float(cleaned)
+            if price > 0:
+                return price
+            
+        except:
+            pass
+            
+        return None
+
+    def _extract_price_from_text(self, text: str) -> Optional[float]:
+        """Extract price from text using regex patterns."""
+        if not text:
+            return None
+            
+        # Common price patterns
+        patterns = [
+            r'\$\s*(\d+(?:,\d{3})*(?:\.\d{2})?)',  # $XX.XX
+            r'USD\s*(\d+(?:,\d{3})*(?:\.\d{2})?)',  # USD XX.XX
+            r'(\d+(?:,\d{3})*(?:\.\d{2})?)\s*USD',  # XX.XX USD
+            r'€\s*(\d+(?:,\d{3})*(?:\.\d{2})?)',    # €XX.XX
+            r'EUR\s*(\d+(?:,\d{3})*(?:\.\d{2})?)',  # EUR XX.XX
+            r'(\d+(?:,\d{3})*(?:\.\d{2})?)\s*EUR',  # XX.XX EUR
+            r'cijena:?\s*\$?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)', # cijena: XX.XX
+            r'kn:?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)',  # kn: XX.XX
+            r'hrk:?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)'  # hrk: XX.XX
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text, re.I)
+            if match:
+                return self._clean_price(match.group(1))
+        return None
+
+    def _detect_and_translate(self, text: str) -> str:
+        """Detect language and translate to English if needed."""
+        try:
+            lang = detect(text)
+            if lang != 'en':
+                logger.info(f"Detected language: {lang}, translating to English")
+                translator = GoogleTranslator(source=lang, target='en')
+                return translator.translate(text)
+            return text
+        except LangDetectException:
+            return text  # Return original if detection fails
+            
+    def _extract_budget_from_text(self, text: str) -> Tuple[Optional[float], Optional[str]]:
+        """Extract budget and currency from text."""
+        # Common currency patterns
+        currency_patterns = {
+            'EUR': [r'(\d+(?:,\d{3})*(?:\.\d{2})?)\s*(?:EUR|€)',
+                   r'(?:EUR|€)\s*(\d+(?:,\d{3})*(?:\.\d{2})?)',
+                   r'maksimalno\s*(?:EUR|€)?\s*(\d+)',
+                   r'do\s*(?:EUR|€)?\s*(\d+)'],
+            'USD': [r'(\d+(?:,\d{3})*(?:\.\d{2})?)\s*(?:USD|\$)',
+                   r'(?:USD|\$)\s*(\d+(?:,\d{3})*(?:\.\d{2})?)',
+                   r'maximum\s*(?:USD|\$)?\s*(\d+)',
+                   r'up to\s*(?:USD|\$)?\s*(\d+)'],
+            'HRK': [r'(\d+(?:,\d{3})*(?:\.\d{2})?)\s*(?:HRK|kn)',
+                   r'(?:HRK|kn)\s*(\d+(?:,\d{3})*(?:\.\d{2})?)',
+                   r'do\s*(?:HRK|kn)?\s*(\d+)']
+        }
+        
+        for currency, patterns in currency_patterns.items():
+            for pattern in patterns:
+                match = re.search(pattern, text, re.I)
+                if match:
+                    amount = self._clean_price(match.group(1))
+                    if amount:
+                        return amount, currency
+        
+        # Look for numbers with budget-related words
+        budget_patterns = [
+            r'budget\s*(?:of)?\s*(\d+)',
+            r'maksimalno\s*(\d+)',
+            r'maksimum\s*(\d+)',
+            r'max\s*(\d+)',
+            r'up to\s*(\d+)',
+            r'do\s*(\d+)',
+            r'under\s*(\d+)'
+        ]
+        
+        for pattern in budget_patterns:
+            match = re.search(pattern, text, re.I)
+            if match:
+                amount = self._clean_price(match.group(1))
+                if amount:
+                    # Default to EUR for Croatian text, USD for English
+                    try:
+                        lang = detect(text)
+                        default_currency = 'EUR' if lang in ['hr', 'sl', 'bs', 'sr'] else 'USD'
+                        return amount, default_currency
+                    except:
+                        return amount, 'USD'
+        
+        return None, None
+
+    def _preprocess_search_criteria(self, criteria: SearchCriteria) -> SearchCriteria:
+        """Preprocess and enhance search criteria."""
+        # Translate query if not in English
+        if criteria.language != "en":
+            translated_query = self._detect_and_translate(criteria.query)
+            if translated_query != criteria.query:
+                criteria.query = translated_query
+                criteria.language = "en"
+        
+        # If budget wasn't explicitly set, try to extract it from the query text
+        if not criteria.budget:
+            budget, currency = self._extract_budget_from_text(criteria.query)
+            if budget:
+                criteria.budget = budget
+                if currency:
+                    criteria.currency = currency
+        
+        return criteria
+
+    def _expand_search_query(self, query: str) -> List[str]:
+        """Generate variations of the search query for better coverage."""
+        variations = [query]
+        
+        # Clean up the query
+        base_query = query.strip()
+        
+        # Add Croatian shopping-related terms
+        shop_terms = [
+            "kupiti", "cijena", "ponuda", "prodaja",
+            "kupi", "trgovina", "usporedba cijena",
+            "najbolja cijena", "gdje kupiti"
+        ]
+        variations.extend([f"{term} {base_query}" for term in shop_terms])
+        
+        # Add simple variations
+        variations.extend([
+            f"{base_query} akcija",
+            f"{base_query} online",
+            f"{base_query} hrvatska",
+            f"{base_query} prodaja",
+            f"{base_query} web shop",
+            base_query.replace(" ", "+")
+        ])
+        
+        # Also try basic English terms for international sites
+        if not any(term in base_query.lower() for term in shop_terms):
+            variations.extend([
+                f"buy {base_query}",
+                f"{base_query} price",
+                f"{base_query} shop",
+                f"{base_query} online shop"
+            ])
+        
+        return list(set(variations))  # Remove duplicates
+
+    async def search_shops(self, criteria: SearchCriteria) -> List[str]:
+        """Search for products matching the criteria."""
+        log_to_file('INFO', 'starting_shop_search', criteria=criteria.dict())
+        
+        max_retries = 3
+        retry_count = 0
+        min_results = 3  # Minimum number of results we want to find
+        
+        try:
+            # Log initial search request
+            log_to_file('INFO', 'search_request', {
+                'query': criteria.query,
+                'language': criteria.language,
+                'requirements': [req.dict() for req in criteria.requirements],
+                'budget': criteria.budget,
+                'currency': criteria.currency
+            })
+            
+            # Preprocess search criteria
+            criteria = self._preprocess_search_criteria(criteria)
+            
+            # Log preprocessed criteria
+            log_to_file('INFO', 'preprocessed_criteria', {
+                'query': criteria.query,
+                'language': criteria.language
+            })
+            
+            all_results = set()
+            
+            while retry_count < max_retries and len(all_results) < min_results:
+                try:
+                    # Build base query
+                    query_parts = []
+                    
+                    # Add main search query
+                    base_query = criteria.query
+                    if retry_count > 0:
+                        # On retries, try to simplify the query
+                        words = base_query.split()
+                        if len(words) > 2:
+                            base_query = " ".join(words[:-(retry_count)])
+                    query_parts.append(base_query)
+                    
+                    # Add requirements if any (only on first try)
+                    if retry_count == 0:
+                        for req in criteria.requirements:
+                            query_parts.append(f"{req.name}:{req.value}")
+                    
+                    # Add budget constraint if specified (only on first try)
+                    if retry_count == 0 and criteria.budget:
+                        if criteria.currency == "HRK":
+                            query_parts.append(f"cijena do {criteria.budget}kn")
+                        else:
+                            query_parts.append(f"price under {criteria.budget}{criteria.currency}")
+                    
+                    # Build the base query
+                    query = " ".join(query_parts)
+                    
+                    # Generate query variations (fewer on retries)
+                    queries = self._expand_search_query(query) if retry_count == 0 else [query]
+                    
+                    # Priority sites first, then others
+                    priority_sites = ['nabava.net', 'jeftinije.hr']
+                    if retry_count == 0:
+                        site_groups = [priority_sites, self.ECOMMERCE_SITES]
+                    else:
+                        # On retry, try other sites
+                        other_sites = [s for s in self.ECOMMERCE_SITES if s not in priority_sites]
+                        site_groups = [other_sites]
+                    
+                    # Search with each site group
+                    for sites in site_groups:
+                        site_query = " OR ".join(f"site:{site}" for site in sites)
+                        
+                        # Try each query variation
+                        for q in queries:
+                            try:
+                                # First try without site restriction
+                                search_results = self.ddgs.text(
+                                    q,
+                                    region='hr-HR',
+                                    max_results=15
+                                )
+                                
+                                if search_results:
+                                    for result in search_results:
+                                        url = result.get('link', '')
+                                        if any(site in url.lower() for site in sites):
+                                            all_results.add(url)
+                                
+                                # Then try each site specifically if needed
+                                if len(all_results) < min_results:
+                                    for site in sites:
+                                        site_specific_query = f"{q} site:{site}"
+                                        log_to_file('INFO', 'trying_site_search', {
+                                            'site': site,
+                                            'query': site_specific_query,
+                                            'retry': retry_count
+                                        })
+                                    
+                                    # Try different search approaches
+                                    search_attempts = [
+                                        (f"{q} site:{site}", None),  # No region
+                                        (f"{q} site:{site}", 'hr-HR'),  # HR region
+                                        (f"price {q} site:{site}", None),  # Price focused
+                                        (f"buy {q} site:{site}", 'hr-HR')  # Purchase focused
+                                    ]
+                                    
+                                    for search_query, region in search_attempts:
+                                        try:
+                                            kwargs = {
+                                                'max_results': 10,
+                                                'timeout': 20
+                                            }
+                                            if region:
+                                                kwargs['region'] = region
+                                            
+                                            results = self.ddgs.text(search_query, **kwargs)
+                                            
+                                            if results:
+                                                for result in results:
+                                                    url = result.get('link', '')
+                                                    if site.lower() in url.lower():
+                                                        all_results.add(url)
+                                                        log_to_file('INFO', 'found_result', {
+                                                            'site': site,
+                                                            'url': url
+                                                        })
+                                                
+                                                if len(all_results) >= min_results:
+                                                    break
+                                                    
+                                        except Exception as e:
+                                            log_to_file('WARNING', 'search_attempt_failed', {
+                                                'query': search_query,
+                                                'error': str(e)
+                                            })
+                                            continue
+                                            
+                                    if len(all_results) >= min_results:
+                                        break
+                            
+                            if search_results:
+                                for result in search_results:
+                                    url = result.get('link', '')
+                                    if any(site in url.lower() for site in self.ECOMMERCE_SITES):
+                                        all_results.add(url)
+                
+                except Exception as search_error:
+                    log_to_file('WARNING', 'search_attempt_failed',
+                              retry=retry_count,
+                              error=str(search_error))
+                
+                if len(all_results) < min_results:
+                    retry_count += 1
+                    await asyncio.sleep(1)  # Small delay between retries
+                else:
+                    break
+            
+            results = list(all_results)
+            
+            log_to_file('INFO', 'current_results', {
+                'count': len(results),
+                'urls': results[:3]  # Log first 3 URLs for debugging
+            })
+            
+            if not results:
+                # If no results found, try direct site searches
+                simple_query = criteria.query.split()[:3]  # Take first 3 words
+                base_query = ' '.join(simple_query)
+                
+                # Try searching on nabava.net first
+                direct_query = f"site:nabava.net {base_query}"
+                log_to_file('DEBUG', 'trying_direct_search', {'query': direct_query})
+                
+                search_results = self.ddgs.text(
+                    direct_query,
+                    max_results=5
+                )
+                
+                search_results = self.ddgs.text(
+                    final_query,
+                    region='hr-HR',
+                    max_results=15
+                )
+                
+                if search_results:
+                    results = [r.get('link', '') for r in search_results 
+                             if any(site in r.get('link', '').lower() 
+                                   for site in self.ECOMMERCE_SITES)]
+            
+            log_to_file('INFO', 'shop_search_complete',
+                       num_results=len(results),
+                       num_retries=retry_count,
+                       sites=[urlparse(url).netloc for url in results])
+            
+            return results[:10]  # Return top 10 unique results
+            
+        except Exception as e:
+            log_to_file('ERROR', 'shop_search_failed', error=str(e))
+            # Return an empty list as last resort
+            return []
+
+    async def get_similar_products(self, product_url: str) -> List[str]:
+        """Find similar products to the given one."""
+        log_to_file('INFO', 'searching_similar_products', url=product_url)
+        
+        try:
+            # Extract domain and product category from URL
+            parsed_url = urlparse(product_url)
+            domain = parsed_url.netloc
+            path_parts = [p for p in parsed_url.path.split('/') if p]
+            
+            # Try to identify category from URL path
+            category = None
+            if len(path_parts) > 1:
+                category = path_parts[-2]
+            
+            # Build search query
+            query_parts = []
+            
+            # Add category if found
+            if category:
+                query_parts.append(category)
+            
+            # Add domain-specific terms
+            if 'nabava.net' in domain:
+                query_parts.append('usporedba cijena')
+            elif any(site in domain for site in self.ECOMMERCE_SITES):
+                query_parts.append('slični proizvodi')
+                
+            # Add site restriction for Croatian and regional results
+            site_query = " OR ".join(f"site:{site}" for site in self.ECOMMERCE_SITES)
+            query = f"{' '.join(query_parts)} ({site_query})"
+            
+            # Search for similar products
+            results = []
+            search_results = self.ddgs.text(
+                query,
+                region='hr-HR',
+                max_results=15
+            )
+            
+            if search_results:
+                for result in search_results:
+                    url = result.get('link', '')
+                    if url != product_url and any(site in url.lower() for site in self.ECOMMERCE_SITES):
+                        results.append(url)
+            
+            log_to_file('INFO', 'similar_products_found',
+                       num_results=len(results),
+                       sites=[urlparse(url).netloc for url in results])
+            
+            return results[:10]  # Return top 10 similar products
+            
+        except Exception as e:
+            log_to_file('ERROR', 'similar_products_search_failed', error=str(e))
+            return []
+
+    async def filter_results(self, urls: List[str], criteria: SearchCriteria) -> List[str]:
+        """Filter search results based on criteria."""
+        if not urls:
+            return []
+            
+        log_to_file('INFO', 'filtering_results', num_urls=len(urls))
+        
+        try:
+            # Initialize async HTTP session if needed
+            await self.ensure_session()
+            
+            filtered_urls = []
+            for url in urls:
+                try:
+                    # Check if URL is from a supported site
+                    if not any(site in url.lower() for site in self.ECOMMERCE_SITES):
+                        continue
+                    
+                    # Add URL to filtered results
+                    filtered_urls.append(url)
+                    
+                except Exception as e:
+                    log_to_file('WARNING', 'url_filtering_error',
+                              url=url, error=str(e))
+                    continue
+            
+            log_to_file('INFO', 'results_filtered',
+                       input_urls=len(urls),
+                       filtered_urls=len(filtered_urls))
+            
+            return filtered_urls
+            
+        except Exception as e:
+            log_to_file('ERROR', 'result_filtering_failed', error=str(e))
+            return []
