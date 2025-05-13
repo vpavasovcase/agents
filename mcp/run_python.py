@@ -38,7 +38,7 @@ async def main():
     async with agent.run_mcp_servers():
         while True:
             user_input = input("\n[You] ")
-            
+
             # Check if user wants to exit
             if user_input.lower() in ['exit', 'quit', 'bye', 'goodbye']:
                 print("Goodbye!")
@@ -47,12 +47,11 @@ async def main():
             try:
                 result = await agent.run(user_input, message_history=conversation_history)
                 print('[Assistant] ', result.data)
-                
-                # Store the messages from this interaction in the conversation history
-                conversation_history = result.all_messages()
+
+                # Store only the messages from this interaction in the conversation history
+                conversation_history = result.new_messages()
             except Exception as e:
                 print(f"\nError: {e}")
 
 if __name__ == '__main__':
-    asyncio.run(main())    
-    
+    asyncio.run(main())
