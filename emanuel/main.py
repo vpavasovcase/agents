@@ -84,7 +84,7 @@ servers = [
     # Assume the docs folder is mounted at /app/docs in the container
     MCPServerStdio('npx', ['-y', '@modelcontextprotocol/server-filesystem', DOCS_BASE_PATH]),
     # Office Word MCP Server using uvx
-    MCPServerStdio( 'uvx', ['--from', 'office-word-mcp-server', 'word_mcp_server'] ),
+    MCPServerStdio( 'python3', ["emanuel/Office-Word-MCP-Server/word_mcp_server.py"] ),
 ]
 
 # --- Agent Definition ---
@@ -114,15 +114,20 @@ Your workflow is as follows:
 8.  Populate the `ContractData` Pydantic model with the extracted information.
 9.  If you cannot find a required piece of information, or if there are conditional fields (like in Članak 2) where the applicable condition is not clear from the documents, use the `MissingDataQuestion` Pydantic model to ask the user for clarification. Respond with an `AgentResponse` with status 'missing_data' and the question.
 10. If you have successfully extracted all required information or received it from the user, prepare the `ContractData` model.
-11. Use the Office Word MCP server tool to create a new `.docx` document based on the template (`template.docx`) filled with the extracted data.
-12. Save the completed document.
+11. Use the Office Word MCP server tool to create a new `.docx` document based on the template (`template.docx`) filled with the extracted data. Use the following Word MCP server functions:
+    - First, copy the template document using `copy_document` function with source_filename=template.docx and destination_filename=completed/[credit_number].docx
+    - Then, use `search_and_replace` function to replace each placeholder in the document with the actual data from the ContractData model
+    - For example, to replace [IME I PREZIME] with the actual name, use search_and_replace(filename="completed/[credit_number].docx", find_text="[IME I PREZIME]", replace_text="John Doe")
+    - Do this for all placeholders in the document
+12. After all replacements are done, the document will be automatically saved.
 13. Respond with an `AgentResponse` with status 'success' and a message indicating the document has been created. If there was an error, respond with status 'error'.
 
 **Important Considerations:**
 * When asking the user for clarification, provide enough context from the documents or the template so they can understand the question.
 * Be precise when using tool calls. Refer to the documentation for the filesystem and officeword MCP servers for exact command names and parameters.
 * Use Logfire to log your steps and any issues encountered.
-* Datum zaključenja Dodatka ispisan slovima i datum zaključenja dodatka u formatu DD.MM.GGGG. treba biti današnji datum, koristi mcp server run_python za dobiti datum.
+* IMPORTANT: Do NOT use the run_python_code tool to create or manipulate Word documents. Always use the Word MCP server functions (copy_document, search_and_replace, etc.) for document operations.
+* Datum zaključenja Dodatka ispisan slovima i datum zaključenja dodatka u formatu DD.MM.GGGG. treba biti današnji datum. Use the current date for these fields.
 * opcija iz članka 2 primjenjiva za svaki dodatak je opcija 1, a to je smanjenje glavnice.
 * glavnica prije smanjenja: 9.158,10 EUR , glavnica nakon smanjenja: 6.158,10 EUR.
 * Prema novom "Otplatnom planu" (Otplatni_plan.pdf), "Iznos obroka ili anuiteta u EUR" je 185,26 EUR. Slovima: sto osamdeset pet eura i dvadeset šest centi.
@@ -194,6 +199,25 @@ async def main():
                  agent_task = None # No task to run
 
             # Pokreni agenta samo ako je agent_task postavljen
+            step = 0
+
+            while True:
+                result = await agent.run(
+                    agent_task if step == 0 else "",   # only the first time
+                    message_history=conversation_history,
+                    output_type=AgentResponse
+                )
+
+                conversation_history = result.new_messages()   # keep tool messages
+
+                # if the model already gave you a final_result → we're done
+                if result.output and result.output.status:
+                    break       # success, missing_data or error came back
+
+                # otherwise the model only produced tool calls; let them execute
+                # then run the agent again to let it produce the next message
+                step += 1
+
             if agent_task:
                 try:
                     result = await agent.run(
