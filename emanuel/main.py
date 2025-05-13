@@ -25,7 +25,7 @@ logfire.info("Agent started")
 Agent.instrument_all() # Instrumentiraj sve agente
 
 # --- Folder Structure (adjust as needed for your Docker mapping) ---
-DOCS_BASE_PATH = os.getenv('DOCS_BASE_PATH', '/app/emanuel/docs') 
+DOCS_BASE_PATH = os.getenv('DOCS_BASE_PATH', '/app/emanuel/docs')
 
 def get_credit_sources_path(credit_number: str) -> str:
     return os.path.join(DOCS_BASE_PATH, 'sources', credit_number)
@@ -88,9 +88,9 @@ servers = [
 ]
 
 # --- Agent Definition ---
-model = GroqModel(
-    'llama-3.3-70b-versatile', provider=GroqProvider(api_key=os.getenv('GROQ_API_KEY'))
-)
+model = GroqModel('meta-llama/llama-4-maverick-17b-128e-instruct', provider=GroqProvider(api_key=os.getenv('GROQ_API_KEY')))
+# model = OpenAIModel('gpt-4.1-mini', provider=OpenAIProvider(api_key=os.getenv('OPENAI_API_KEY')))
+# model = OpenAIModel('deepseek-chat',provider=DeepSeekProvider(api_key=os.getenv('DEEPSEEK_API_KEY', "")))
 
 system_prompt = f"""
 You are a banking document automation agent. Your primary task is to fill out a standard bank document template (Dodatak Ugovoru) using data extracted from other source documents provided for a specific credit number.
@@ -127,6 +127,11 @@ Your workflow is as follows:
 * glavnica prije smanjenja: 9.158,10 EUR , glavnica nakon smanjenja: 6.158,10 EUR.
 * Prema novom "Otplatnom planu" (Otplatni_plan.pdf), "Iznos obroka ili anuiteta u EUR" je 185,26 EUR. Slovima: sto osamdeset pet eura i dvadeset šest centi.
 Begin by processing the user's command and attempting to extract the credit number.
+
+Important: When returning a 'missing_data' status, ALWAYS include a 'question_to_user' object with:
+1. A clear question string
+2. The specific field_name that's missing
+3. Optional list of options if applicable
 """
 
 agent = Agent(
@@ -208,15 +213,15 @@ async def main():
                         current_credit_number = None # Task completed, reset credit number
                     elif result.output.status == 'missing_data':
                         print(f"[Assistant] {result.output.message}")
-                        # Sigurno pristupi atributima jer provjeravamo question_to_user is not None dolje
+                        # Add a null check before accessing question_to_user attributes
                         if result.output.question_to_user is not None:
                             print(f"Missing data: {result.output.question_to_user.question}")
                             # Store the missing data field to know what the next user input is for
                             missing_data_fields[result.output.question_to_user.field_name] = result.output.question_to_user.options
                         else:
-                             logfire.error("Agent returned missing_data status but no question_to_user.")
-                             print("[Assistant] Error: Agent indicated missing data but did not provide a question.")
-                             current_credit_number = None # Error occurred, reset credit number
+                            logfire.error("Agent returned missing_data status but no question_to_user.")
+                            print("[Assistant] Error: Agent indicated missing data but did not provide a question.")
+                            current_credit_number = None # Error occurred, reset credit number
 
                     elif result.output.status == 'error':
                         print(f"[Assistant] Error: {result.output.message}")
@@ -227,8 +232,8 @@ async def main():
                          current_credit_number = None # Treat as error, reset credit number
 
 
-                    # Store the messages from this interaction in the conversation history
-                    conversation_history = result.all_messages()
+                    # Store only the messages from this interaction in the conversation history
+                    conversation_history = result.new_messages()
 
                 except Exception as e:
                     logfire.error("An error occurred during agent execution.", exc_info=True)
