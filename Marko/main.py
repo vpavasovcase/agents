@@ -8,26 +8,18 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
 # PydanticAI Imports
-from pydantic_ai import Agent, tool
+from pydantic_ai import Agent
+from pydantic_ai import tool
 # Koristimo OpenAIModel/Provider jer je Groq OpenAI kompatibilan
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
+
+from pydantic_ai.models.groq import GroqModel
+from pydantic_ai.providers.groq import GroqProvider
+
 from pydantic_ai.mcp import MCPServerStdio
-from pydantic_ai.messages import ModelRequestPart, ModelResponsePart, Tex        if data["avg_rating"] is not None:
-            score += data["avg_rating"] * 0.7  # Rating ima veliki utjecaj (max 3.5)
-        score += min(data["num_reviews"], 5) * 0.06  # Bonus za recenzije (max 0.3)
-        
-        if data["product"].price is not None and budget > 0:
-            price_ratio = data["product"].price / budget
-            price_score = max(0, 1 - price_ratio)  # 0 to 1 score, lower price = better
-            score += price_score * 0.5  # Price impact (max 0.5)
-            
-        if criteria and data["product"].description:
-            # Jednostavan match kriterija u opisu (može se poboljšati)
-            criteria_words = set(criteria.lower().split())
-            desc_words = set(data["product"].description.lower().split())
-            matches = len(criteria_words.intersection(desc_words))
-            score += matches * 0.1  # Bonus za svaku matched riječ iz kriterija# Logging Imports
+from pydantic_ai.messages import ModelRequestPart, ModelResponsePart, Tex
+# Logging Imports
 import logfire
 
 # Environment Variables
@@ -58,16 +50,9 @@ groq_api_key = os.getenv("GROQ_API_KEY")
 if not groq_api_key:
     raise ValueError("GROQ_API_KEY nije postavljen u .env datoteci!")
 
-groq_model_name = os.getenv("GROQ_MODEL", "mixtral-8x7b-32768")
-groq_provider = OpenAIProvider(
-    api_key=groq_api_key,
-    base_url="https://api.groq.com/v1"
-)
+# Zamijenjena linija za direktno korištenje GroqModel s navedenim modelom
+llm_model = GroqModel('meta-llama/llama-4-maverick-17b-128e-instruct', provider=GroqProvider(api_key=os.getenv('GROQ_API_KEY')))
 
-llm_model = OpenAIModel(
-    model_name=groq_model_name,
-    provider=groq_provider
-)
 
 # --- Pydantic Modeli za Strukturiranje Podataka ---
 
@@ -190,16 +175,16 @@ async def crawl_webshop_for_products(url: str, product_type: str, budget: float,
                 "productUrl": "url"
             }
         }
-        
+
         # Pozovi Firecrawl kroz PydanticAI MCP
         crawl_result = await agent.mcp_request('firecrawl', 'crawl', crawl_query)
-        
+
         # Pretvori rezultate u Product objekte
         for item in crawl_result.get('items', []):
             try:
                 # Pretvori cijenu u EUR ako je potrebno (TODO: implementirati konverziju valuta)
                 price = float(item.get('price', 0))
-                
+
                 product = Product(
                     name=item.get('name', ''),
                     price=price,
@@ -260,21 +245,21 @@ async def search_product_reviews(product_name: str, num_results: int = 3) -> Lis
             ],
             "limit": num_results
         }
-        
+
         search_results = await agent.mcp_request('firecrawl', 'search', search_query)
-        
+
         # Filtriraj i obradi rezultate
         for result in search_results.get('results', []):
             url = result.get('url')
             if url and len(urls) < num_results:
                 urls.append(url)
-        
+
         if not urls:
             logfire.warning(f"Nisu pronađene recenzije za '{product_name}'")
-            
+
     except Exception as e:
         logfire.error(f"Greška pri pretrazi recenzija za '{product_name}': {e}")
-        
+
     logfire.info(f"Pronađeni URL-ovi recenzija: {urls}")
     return urls
 
@@ -310,16 +295,16 @@ async def crawl_review_page(url: str, product_name: str) -> Optional[Review]:
                 "title": ["h1", ".review-title"]
             }
         }
-        
+
         crawl_result = await agent.mcp_request('firecrawl', 'crawl', crawl_query)
-        
+
         # Koristi LLM za generiranje sažetka iz crawlanog sadržaja
         content = crawl_result.get('content', '')
         if content:
             summary_prompt = f"Sažmi ovu recenziju proizvoda {product_name} u 2-3 rečenice:\n\n{content}"
             summary_result = await agent.llm.complete(summary_prompt)
             summary = summary_result.choices[0].text.strip()
-            
+
         # Pokušaj izvući ocjenu iz crawlanog sadržaja
         rating_text = crawl_result.get('rating')
         if rating_text:
@@ -332,7 +317,7 @@ async def crawl_review_page(url: str, product_name: str) -> Optional[Review]:
                     rating = rating_num
             except (ValueError, TypeError):
                 pass  # Ako ne uspije parsiranje, ostavi rating kao None
-                
+
     except Exception as e:
         logfire.error(f"Greška pri crawlanju recenzije s {url}: {e}")
 
@@ -379,9 +364,9 @@ async def retrieve_products_from_memory() -> List[Product]:
             "type": "product",
             "limit": 100  # Maksimalan broj proizvoda za dohvatiti
         }
-        
+
         memory_results = await agent.mcp_request('memory-server', 'query', memory_query)
-        
+
         products = []
         for item in memory_results.get('items', []):
             try:
@@ -391,14 +376,13 @@ async def retrieve_products_from_memory() -> List[Product]:
             except Exception as e:
                 logfire.warning(f"Nije moguće parsirati proizvod iz memorije: {e}")
                 continue
-                
+
         logfire.info(f"Uspješno dohvaćeno {len(products)} proizvoda iz memorije")
         return products
-        
+
     except Exception as e:
         logfire.error(f"Greška pri dohvaćanju proizvoda iz memorije: {e}")
         return []  # Vrati praznu listu u slučaju greške
-# Remove this else block as it's unreachable and inconsistent
 
 @tool
 async def retrieve_reviews_for_product(product_name: str) -> List[Review]:
@@ -418,9 +402,9 @@ async def retrieve_reviews_for_product(product_name: str) -> List[Review]:
                 "product_name": product_name
             }
         }
-        
+
         memory_results = await agent.mcp_request('memory-server', 'query', memory_query)
-        
+
         reviews = []
         for item in memory_results.get('items', []):
             try:
@@ -430,16 +414,14 @@ async def retrieve_reviews_for_product(product_name: str) -> List[Review]:
             except Exception as e:
                 logfire.warning(f"Nije moguće parsirati recenziju iz memorije: {e}")
                 continue
-                
+
         logfire.info(f"Uspješno dohvaćeno {len(reviews)} recenzija za '{product_name}' iz memorije")
         return reviews
-        
+
     except Exception as e:
         logfire.error(f"Greška pri dohvaćanju recenzija iz memorije: {e}")
         return []  # Vrati praznu listu u slučaju greške
-    if not mcp_servers or 'memory-server' not in str(mcp_servers):
-        print("UPOZORENJE: Memory MCP nije konfiguriran.")
-        return []
+
 
 @tool
 async def evaluate_products(budget: float, criteria: Optional[str] = None) -> FinalResult:
@@ -460,7 +442,7 @@ async def evaluate_products(budget: float, criteria: Optional[str] = None) -> Fi
                  msg += " (Memory MCP nije konfiguriran)"
             logfire.warning(msg)
             return FinalResult(
-                message=msg, 
+                message=msg,
                 justification="Nema dostupnih podataka.",
                 recommended_product=None,
                 alternative_products=[]
@@ -574,10 +556,10 @@ async def clear_memory() -> str:
             msg = "Memorija nije aktivno konfigurirana, preskačem brisanje."
             print(f"INFO: {msg}")
             return msg
-            
+
         # Pošalji zahtjev za brisanje svih podataka
         clear_result = await agent.mcp_request('memory-server', 'clear', {})
-        
+
         if clear_result.get('success', False):
             msg = "Memorija je uspješno obrisana."
             logfire.info(msg)
@@ -586,7 +568,7 @@ async def clear_memory() -> str:
             msg = f"Greška pri brisanju memorije: {clear_result.get('error', 'Nepoznata greška')}"
             logfire.error(msg)
             return msg
-            
+
     except Exception as e:
         error_msg = f"Greška pri brisanju memorije: {e}"
         logfire.error(error_msg)
@@ -631,22 +613,6 @@ agent = Agent(
     # debug_mode=True # Korisno za praćenje rada agenta
 )
 
-# --- Kreiranje instance Agenta ---
-agent = Agent(
-    llm=llm_model,
-    system_prompt=SYSTEM_PROMPT,
-    tools=[ # Lista svih definiranih alata
-        search_webshops,
-        crawl_webshop_for_products,
-        search_product_reviews,
-        crawl_review_page,
-        retrieve_products_from_memory,
-        retrieve_reviews_for_product,
-        evaluate_products,
-        clear_memory,
-    ],
-    mcp_servers=mcp_servers
-)
 
 # --- Glavna Funkcija za CLI ---
 
