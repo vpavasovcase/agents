@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import os
 import asyncio
+from pydantic_ai.models.groq import GroqModel
+from pydantic_ai.providers.groq import GroqProvider
 from dataclasses import dataclass
 from datetime import date
 from typing import List, Dict
