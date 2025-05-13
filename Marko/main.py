@@ -8,17 +8,13 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
 # PydanticAI Imports
-from pydantic_ai import Agent
-from pydantic_ai import tool
-# Koristimo OpenAIModel/Provider jer je Groq OpenAI kompatibilan
-from pydantic_ai.models.openai import OpenAIModel
-from pydantic_ai.providers.openai import OpenAIProvider
-
+from pydantic_ai import Agent, tool, RunContext
 from pydantic_ai.models.groq import GroqModel
 from pydantic_ai.providers.groq import GroqProvider
-
 from pydantic_ai.mcp import MCPServerStdio
-from pydantic_ai.messages import ModelRequestPart, ModelResponsePart, Tex
+from typing import Union
+
+
 # Logging Imports
 import logfire
 
