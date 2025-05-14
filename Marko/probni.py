@@ -83,41 +83,14 @@ class FinalResult(BaseModel):
 
 # --- MCP Server Konfiguracija ---
 
-# !!! VAŽNO: Zamijenite ove placeholder naredbe s PRAVIM naredbama ili URL-ovima za vaše MCP servere !!!
-
-# Konfiguracija Memory MCP servera
-MEMORY_MCP_COMMAND = ['npx', '-y', '@mendable/memory-mcp-server', 'stdio']
-
-# Firecrawl MCP konfiguracija
-FIRECRAWL_MCP_COMMAND = ['npx', '-y', '@mendable/firecrawl-mcp-server', 'stdio']
-
-# Alternativa: Ako serveri rade zasebno na nekim URL-ovima
-# MEMORY_MCP_URL = "http://localhost:8001" # Primjer URL-a
-# FIRECRAWL_MCP_URL = "http://localhost:8002" # Primjer URL-a
-
-mcp_servers = []
-
-try:
-    # Konfiguriraj Memory MCP server
-    print("Konfiguriranje Memory MCP servera putem stdio...")
-    memory_server = MCPServerStdio('memory-server', MEMORY_MCP_COMMAND)
-    mcp_servers.append(memory_server)
-    print("Memory MCP server dodan u konfiguraciju.")
-
-    # Konfiguriraj Firecrawl MCP server
-    print("Konfiguriranje Firecrawl MCP servera putem stdio...")
-    firecrawl_server = MCPServerStdio('firecrawl', FIRECRAWL_MCP_COMMAND)
-    mcp_servers.append(firecrawl_server)
-    print("Firecrawl MCP server dodan u konfiguraciju.")
-
-
-except Exception as e:
-    logfire.error(f"Greška pri konfiguraciji MCP servera: {e}", exc_info=True)
-    print(f"Greška pri konfiguraciji MCP servera: {e}. Agent možda neće imati sve funkcionalnosti.")
-
+mcp_servers = [
+    MCPServerStdio('npx', ['-y', "@modelcontextprotocol/server-memory"]),
+    MCPServerStdio('npx', ["-y", "firecrawl-mcp"], {
+        "FIRECRAWL_API_KEY": os.getenv('FIRECRAWL_API_KEY') or ""
+    }),
+]
 
 # --- Definiranje Alata za Agenta ---
-
 
 async def search_webshops(query: str, location: Optional[str] = None, num_results: int = 5) -> List[str]:
     """
@@ -184,6 +157,7 @@ async def crawl_webshop_for_products(url: str, product_type: str, budget: float,
                 product = Product(
                     name=item.get('name', ''),
                     price=price,
+                    currency="EUR",
                     url=item.get('productUrl', '') or f"{url}/product",
                     webshop_url=url,
                     description=item.get('description', '')

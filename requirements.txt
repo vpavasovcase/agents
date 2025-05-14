@@ -18,6 +18,4 @@ pdf2image
 
 #noa
 asyncpg
-git+https://github.com/rjn32s/mcp-ocr.git@main#egg=mcp_ocr
-git+https://github.com/modelcontextprotocol/servers.git@main#egg=mcp_filesystem&subdirectory=src/filesystem
-git+https://github.com/modelcontextprotocol/servers.git@main#egg=mcp_run_python&subdirectory=src/run_python
+

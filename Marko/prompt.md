@@ -27,10 +27,14 @@ Ovako bi trebao ići proces:
 
 6. korisnik dobije link na webshop sa najjeftinijim / najboljim za 100 EUR slušalicama
 
-memorija se obriše
+7. memorija se obriše
 ## 3. logging
 Za pratiti šta rade agenti trebaš implementirati logiranje. Koristi Logfire:
 https://ai.pydantic.dev/logfire/
+  ```
+  logfire.configure()
+  Agent.instrument_all()
+  ```
 ## 4. strukturiranje rezultata
 Za svaki rezultat koji model vraća treba smisliti kako odgovor mora biti strukturiran i
 validiran ako je moguće. to se radi s Pydantic ( ne PydanticAI ) klasama:
@@ -68,7 +72,22 @@ Više o tome u docs: https://ai.pydantic.dev/output/
 - make it in one python file if possible
 - use PydanticAI for the agent, docs are here: https://ai.pydantic.dev/.
 - use MCP servers for the tools where appropriate
+- make a loop in which user can chat with the agent and ask for different products
 
+## MCP servers - real config:
+```
+mcp_servers = [
+    MCPServerStdio('npx', ['-y', "@modelcontextprotocol/server-memory"]),
+    MCPServerStdio('npx', ["-y", "firecrawl-mcp"], {
+        "FIRECRAWL_API_KEY": os.getenv('FIRECRAWL_API_KEY') or ""
+    }),
+]
+```
+
+## Model
+```
+llm_model = GroqModel('meta-llama/llama-4-maverick-17b-128e-instruct', provider=GroqProvider(api_key=os.getenv('GROQ_API_KEY')))
+```
 ## Okolina
 Radimo u ovom kontejneru:
 docker-compose.yml:
