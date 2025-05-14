@@ -73,6 +73,7 @@ Više o tome u docs: https://ai.pydantic.dev/output/
 - use PydanticAI for the agent, docs are here: https://ai.pydantic.dev/.
 - use MCP servers for the tools where appropriate
 - make a loop in which user can chat with the agent and ask for different products
+- I am attaching docs and examples, check them out and write the code in that style
 
 ## MCP servers - real config:
 ```
