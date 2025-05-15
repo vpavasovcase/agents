@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 import os
 import asyncio
+from pydantic_ai.models.groq import GroqModel
+from pydantic_ai.providers.groq import GroqProvider
 from dataclasses import dataclass
 from datetime import date
 from typing import List, Dict
 from pathlib import Path
-
 import logfire
 import asyncpg
 from pydantic import BaseModel, Field
@@ -55,7 +56,7 @@ class Deps:
 class RecordInput(BaseModel):
     image_path: str = Field(description="Local path to the receipt image")
     vendor: str = Field(description="Vendor or store name")
-    date: date = Field(description="Date of the receipt (YYYY-MM-DD)")
+    receipt_date: date = Field(description="Date of the receipt (YYYY-MM-DD)")
     total: float = Field(description="Total amount on the receipt")
     items: List[Dict] = Field(description="Line items as list of {name, price}")
 

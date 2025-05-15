@@ -20,6 +20,7 @@ pdf2image
 asyncpg
 
 
+
 #Word MCP server
 mcp[cli]
 python-docx
