@@ -19,10 +19,7 @@ pdf2image
 #noa
 asyncpg
 
-
-
-#Word MCP server
-mcp[cli]
+#emanuel
 python-docx
-msoffcrypto-tool
+pymupdf
 docx2pdf
