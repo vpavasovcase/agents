@@ -2,8 +2,12 @@ httpx
 logfire
 devtools
 python-dotenv
-pydantic-ai
+pydantic-ai>=0.7.0
 google-generativeai
 gradio>=5.9.0
 nest-asyncio
 aioconsole
+aiohttp
+async-timeout
+pydantic[email]
+openai

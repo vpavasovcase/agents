@@ -7,7 +7,22 @@ google-generativeai
 gradio>=5.9.0
 nest-asyncio
 aioconsole
+aiohttp
+async-timeout
+pydantic-ai-slim[duckduckgo]
+pydantic[email]
 
 poppler-utils
 pytesseract 
 pdf2image
+
+#noa
+asyncpg
+
+
+
+#Word MCP server
+mcp[cli]
+python-docx
+msoffcrypto-tool
+docx2pdf
