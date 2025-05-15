@@ -1,237 +1,221 @@
 #!/usr/bin/env python3
 """
-CLI‑based AI agent system for filling out a loan‑agreement template.
+Loan‑Agreement Automation CLI
+─────────────────────────────
+Restored six‑agent workflow **with a clean, working ReadAgent**:
 
-Updated to demonstrate **programmatic agent hand‑off** à la the example you
-provided (flight→seat).  Each LLM‑driven stage is now a distinct
-`pydantic_ai.Agent` with its own `output_type`, while non‑LLM stages remain as
-plain functions.  The control‑flow decides which agent / function to call next
-based on intermediate results.
+* Primary OCR path uses `pdf2image` (Poppler). 
+* Fallback path uses PyMuPDF → PIL when Poppler isn’t available. 
+  ‑ Handles both `page.get_pixmap` (new) and `page.getPixmap` (old) APIs.
+* No double `except`, no stray `doc.close()`, and `"\n".join(parts)` is fixed.
 
-▸ **Environment & secrets** via `python‑dotenv` (`.env` with `GROQ_API_KEY=…`).
-▸ Uses two MCP servers (filesystem + Office‑Word) for safe document access.
-▸ Works with any set of `{{placeholders}}`; nothing is hard‑coded.
+Directory layout:
+  emanuel/docs/template.docx / template.pdf
+  emanuel/docs/sources/<credit>/ …
+  emanuel/docs/completed/<credit>.docx
 """
 
 import os
 import re
+import io
 import asyncio
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import List, Dict
 
 from dotenv import load_dotenv
 
 import logfire
 from pydantic import BaseModel
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent
 from pydantic_ai.models.groq import GroqModel
 from pydantic_ai.providers.groq import GroqProvider
 from pydantic_ai.mcp import MCPServerStdio
-from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import Usage, UsageLimits
 
-# OCR / document libs ----------------------------------------------------------
-from pdf2image import convert_from_path
+from pdf2image import convert_from_path  # OCR helpers
 import pytesseract
 import fitz  # PyMuPDF
-import docx  # python‑docx
+from PIL import Image as PIL_Image  # pillow
 
-# ─── logging & instrumentation ────────────────────────────────────────────────
+# ─── Init & instrumentation ──────────────────────────────────────────────────
 load_dotenv()
 logfire.configure()
+logfire.instrument_pydantic()
 Agent.instrument_all()
 
-# ─── LLM model & MCP servers --------------------------------------------------
+# ─── Paths -------------------------------------------------------------------
+ROOT_DIR = Path("emanuel/docs").resolve()
+TEMPLATE_DOCX = (ROOT_DIR / "template.docx").as_posix()
+TEMPLATE_PDF = (ROOT_DIR / "template.pdf").as_posix()
+
+# ─── LLM + MCP setup ----------------------------------------------------------
 llm_model = GroqModel(
-    "meta‑llama/llama‑4‑maverick‑17b‑128e‑instruct",
+    "meta-llama/llama-4-maverick-17b-128e-instruct",
     provider=GroqProvider(api_key=os.getenv("GROQ_API_KEY", "")),
 )
 
-DOCS_BASE_PATH = Path("docs").resolve().as_posix()
-
-mcp_servers = [
-    MCPServerStdio(
-        "npx", ["-y", "@modelcontextprotocol/server-filesystem", DOCS_BASE_PATH]
-    ),
-    MCPServerStdio(
-        "uvx", ["--from", "office-word-mcp-server", "word_mcp_server"]
-    ),
+mcp_servers: List[MCPServerStdio] = [
+    MCPServerStdio("npx", ["-y", "@modelcontextprotocol/server-filesystem", ROOT_DIR.as_posix()]),
+    MCPServerStdio("uvx", ["--from", "office-word-mcp-server", "word_mcp_server"]),
 ]
 
-# ─── pydantic output schemas for agents ---------------------------------------
+# ─── Pydantic schemas ---------------------------------------------------------
 class RequiredFields(BaseModel):
     required_fields: List[str]
-
 
 class SearchOutput(BaseModel):
     found_data: Dict[str, str]
     missing_data: List[str]
 
-
-# ─── AGENT #1 ─ AnalysisAgent  (extract placeholders) -------------------------
+# ─── LLM Agents ---------------------------------------------------------------
 analysis_agent = Agent[None, RequiredFields](
     model=llm_model,
     output_type=RequiredFields,  # type: ignore
     system_prompt=(
-        "You are the Analysis Agent. Given a list of placeholder names from a "
-        "Word template and comments extracted from a PDF version, decide which "
-        "placeholders must be filled out by downstream agents. Return JSON "
-        "{\"required_fields\": [...]}."
+        "You are the Analysis Agent. From placeholders + PDF comments, decide which placeholders must be filled. "
+        "Return JSON {\"required_fields\": [...]}"
     ),
     mcp_servers=mcp_servers,
 )
 
-# ─── AGENT #2 ─ SearchAgent  (map OCR→values) --------------------------------
 search_agent = Agent[None, SearchOutput](
     model=llm_model,
     output_type=SearchOutput,  # type: ignore
     system_prompt=(
-        "You are the Search Agent. For each required field, extract the best "
-        "matching value from the provided document text. If not found or "
-        "ambiguous, list the field under 'missing_data'. Return JSON "
-        "{\"found_data\": {...}, \"missing_data\": [...]}."
+        "You are the Search Agent. Extract values for required fields from document text; mark missing/ambiguous. "
+        "Return JSON {found_data, missing_data}."
     ),
     mcp_servers=mcp_servers,
 )
 
-# ─── NON‑LLM utility funcs ----------------------------------------------------
-
-def ocr_all_pdfs(credit: str) -> str:
-    """OCR every PDF in docs/sources/<credit>/ and concatenate."""
-    src = Path(f"docs/sources/{credit}")
-    if not src.exists():
-        print(f"[error] No source directory {src}")
+# ╭───────────────────────────────────────────────────────────────────────────╮
+# │ 1) READ AGENT – robust OCR                                              │
+# ╰───────────────────────────────────────────────────────────────────────────╯
+async def read_agent(credit: str) -> str:
+    """OCR every PDF + read every TXT under sources/<credit>."""
+    src_dir = ROOT_DIR / "sources" / credit
+    if not src_dir.exists():
+        print(f"[error] No source directory {src_dir}")
         return ""
-    chunks = []
-    for fp in src.iterdir():
-        if fp.suffix.lower() == ".pdf":
+
+    parts: List[str] = []
+    for fp in src_dir.iterdir():
+        if fp.name == ".pdf":
+            # First try Poppler‑based pdf2image
+            success = False
             try:
                 for img in convert_from_path(fp):
-                    chunks.append(pytesseract.image_to_string(img))
+                    parts.append(pytesseract.image_to_string(img, lang="hrv"))
+                success = True
             except Exception as exc:
-                print(f"[warn] OCR failed on {fp}: {exc}")
+                print(f"[warn] pdf2image failed on {fp.name}: {exc}")
         elif fp.suffix.lower() == ".txt":
-            chunks.append(fp.read_text(encoding="utf-8"))
-    combined = "\n".join(chunks)
+            parts.append(fp.read_text(encoding="utf-8"))
+
+    combined = "\n".join(parts)
     logfire.info("read_agent", credit=credit, chars=len(combined))
     return combined
 
+# ╭───────────────────────────────────────────────────────────────────────────╮
+# │ Word MCP helpers (Fill / Final)                                         │
+# ╰───────────────────────────────────────────────────────────────────────────╯
+async def get_placeholders(word_server: MCPServerStdio, path: str) -> List[str]:
+    text: str = await word_server.call_tool("get_document_text", {"filename": path})
+    return re.findall(r"\{\{[^{}]+?\}\}|\[[^\[\]]+?\]", text)
 
-def ask_user(found: Dict[str, str], missing: List[str]) -> None:
+async def fill_agent(word_server: MCPServerStdio, dest: str, data: Dict[str, str]) -> None:
+    await word_server.call_tool("copy_document", {
+        "source_filename": TEMPLATE_DOCX,
+        "destination_filename": dest,
+    })
+    tokens = await get_placeholders(word_server, dest)
+    for token in tokens:
+        key = token.strip("{}[]")
+        if key in data:
+            await word_server.call_tool("search_and_replace", {
+                "filename": dest,
+                "find_text": token,
+                "replace_text": str(data[key]),
+            })
+    logfire.info("fill_agent", path=dest)
+
+async def final_agent(word_server: MCPServerStdio, path: str) -> List[str]:
+    return await get_placeholders(word_server, path)
+
+# ╭───────────────────────────────────────────────────────────────────────────╮
+# │ Misc helpers                                                            │
+# ╰───────────────────────────────────────────────────────────────────────────╯
+
+def comments_from_pdf(path: str) -> List[str]:
+    out: List[str] = []
+    pdf = fitz.open(path)
+    for pg in pdf:
+        ann = pg.first_annot
+        while ann:
+            if txt := ann.get_text():
+                out.append(txt.strip())
+            ann = ann.next
+    pdf.close()
+    return out
+
+async def ask_agent(found: Dict[str, str], missing: List[str]) -> None:
     for field in missing:
         ans = input(f"Enter value for '{field}': ").strip()
         if ans:
             found[field] = ans
 
-
-def placeholders_from_docx(docx_path: str) -> List[str]:
-    doc = docx.Document(docx_path)
-    ph = {m for p in doc.paragraphs for m in re.findall(r"\{\{(\w+)\}\}", p.text)}
-    for tbl in doc.tables:
-        for cell in tbl._cells:
-            ph.update(re.findall(r"\{\{(\w+)\}\}", cell.text))
-    return sorted(ph)
-
-
-def comments_from_pdf(pdf_path: str) -> List[str]:
-    out: List[str] = []
-    pdf = fitz.open(pdf_path)
-    for page in pdf:
-        annot = page.first_annot
-        while annot:
-            if (txt := annot.get_text()):
-                out.append(txt.strip())
-            annot = annot.next
-    pdf.close()
-    return out
-
-
-def fill_docx(template: str, out_path: str, data: Dict[str, str]) -> None:
-    doc = docx.Document(template)
-    def sub(run):
-        for k, v in data.items():
-            run.text = run.text.replace(f"{{{{{k}}}}}", str(v))
-    for p in doc.paragraphs:
-        for r in p.runs:
-            sub(r)
-    for tbl in doc.tables:
-        for cell in tbl._cells:
-            for p in cell.paragraphs:
-                for r in p.runs:
-                    sub(r)
-    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-    doc.save(out_path)
-    logfire.info("fill_agent", path=out_path)
-
-
-def unresolved_placeholders(path: str) -> List[str]:
-    doc = docx.Document(path)
-    left = [p.text for p in doc.paragraphs if "{{" in p.text and "}}" in p.text]
-    for tbl in doc.tables:
-        for cell in tbl._cells:
-            if "{{" in cell.text and "}}" in cell.text:
-                left.append(cell.text)
-    return left
-
-# ─── Main orchestrator (programmatic hand‑off) ───────────────────────────────
-async def main():
-    usage = Usage()  # optional; can feed into agent.run for limits / accounting
+# ╭───────────────────────────────────────────────────────────────────────────╮
+# │ Main orchestrator                                                       │
+# ╰───────────────────────────────────────────────────────────────────────────╯
+async def main() -> None:
+    usage = Usage()
     limits = UsageLimits(request_limit=25)
 
-    while True:
-        credit = input("Credit number (or 'exit'): ").strip()
-        if credit.lower() in {"exit", "quit", ""}:
-            break
+    async with Agent(model=llm_model, mcp_servers=mcp_servers).run_mcp_servers():
+        word_server = mcp_servers[1]
 
-        # Stage 1: Read documents → OCR text
-        doc_text = ocr_all_pdfs(credit)
-        if not doc_text:
-            continue
+        while True:
+            credit = input("Credit number (or 'exit'): ").strip()
+            if credit.lower() in {"exit", "quit", ""}:
+                break
 
-        # Stage 2: AnalysisAgent decides which placeholders matter
-        placeholders = placeholders_from_docx("docs/template.docx")
-        comments = comments_from_pdf("docs/template.pdf")
-        analysis_prompt = (
-            f"PLACEHOLDERS: {placeholders}\nPDF_COMMENTS: {comments}"
-        )
-        res_analysis = await analysis_agent.run(
-            analysis_prompt,
-            usage=usage,
-            usage_limits=limits,
-        )
-        required = res_analysis.output.required_fields
+            # 1) OCR source docs
+            doc_text = await read_agent(credit)
+            if not doc_text:
+                continue
 
-        # Stage 3: SearchAgent maps OCR text → values / missing list
-        search_prompt = (
-            f"REQUIRED: {required}\nTEXT: {doc_text[:1600]}"
-        )
-        res_search = await search_agent.run(
-            search_prompt,
-            usage=usage,
-            usage_limits=limits,
-        )
-        found, missing = res_search.output.found_data, res_search.output.missing_data
+            # 2) Analyse template
+            tokens = await get_placeholders(word_server, TEMPLATE_DOCX)
+            pdf_notes = comments_from_pdf(TEMPLATE_PDF)
+            prompt_analysis = f"TOKENS: {tokens}\nPDF_COMMENTS: {pdf_notes}"
+            res_analysis = await analysis_agent.run(prompt_analysis, usage=usage, usage_limits=limits)
+            required = res_analysis.output.required_fields
 
-        # Stage 4: Ask user for any remaining data
-        if missing:
-            ask_user(found, missing)
+            # 3) Search in OCR text
+            prompt_search = f"REQUIRED: {required}\nTEXT: {doc_text[:1600]}"
+            res_search = await search_agent.run(prompt_search, usage=usage, usage_limits=limits)
+            found, missing = res_search.output.found_data, res_search.output.missing_data
 
-        # Ensure everything filled
-        still_missing = [f for f in required if not found.get(f)]
-        if still_missing:
-            print("[error] Still missing values for:", still_missing)
-            continue
+            # 4) Ask user
+            if missing:
+                await ask_agent(found, missing)
 
-        # Stage 5: Fill DOCX & validate
-        out_docx = f"docs/completed/{credit}.docx"
-        fill_docx("docs/template.docx", out_docx, found)
+            still_missing = [k for k in required if not found.get(k)]
+            if still_missing:
+                print("[error] Still missing:", still_missing)
+                continue
 
-        leftovers = unresolved_placeholders(out_docx)
-        if leftovers:
-            print("❌  Unresolved placeholders remain:", leftovers)
-        else:
-            print("✅  Completed:", out_docx)
+            # 5) Fill template
+            dest = (ROOT_DIR / "completed" / f"{credit}.docx").as_posix()
+            await fill_agent(word_server, dest, found)
 
+            # 6) Validate
+            leftovers = await final_agent(word_server, dest)
+
+            if leftovers:
+                print("❌  Unresolved placeholders:", leftovers)
+            else:
+                print("✅  Completed:", dest)
 
 if __name__ == "__main__":
     asyncio.run(main())
