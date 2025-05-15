@@ -148,8 +148,12 @@ ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["/bin/bash"]
 ```
 
-## Instructions
+# Instructions
 - the app will be run from cli.
 - make it in one python file if possible
 - use MCP servers for the tools where appropriate
-- when planning the app, YOU MUST consult PydanticAI docs at https://ai.pydantic.dev/ and all the other docs mentioned in the prompt.
+- when planning the app, YOU MUST consult PydanticAI docs at https://ai.pydantic.dev/ and all the other docs mentioned in the prompt. don't use your training data, use the current docs.
+- think about the workflow in this prompt and see if it makes sense and if you can improve it.
+- keep going until the job is completed.
+- if you are unsure about something, don't halucinate, resarch it online first and if you can't find the answer, ask me.
+- plan thouroghly before any tool call, and reflect on the result after.
