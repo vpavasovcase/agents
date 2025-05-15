@@ -12,3 +12,5 @@ aioconsole
 poppler-utils
 pytesseract 
 pdf2image
+
+docx
