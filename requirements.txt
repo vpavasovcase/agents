@@ -12,8 +12,11 @@ async-timeout
 pydantic-ai-slim[duckduckgo]
 pydantic[email]
 
-poppler-utils
-pytesseract 
+# System packages installed in Dockerfile:
+# poppler-utils
+# tesseract-ocr
+# tesseract-ocr-hrv
+pytesseract
 pdf2image
 
 #noa
