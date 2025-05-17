@@ -39,7 +39,6 @@ from pydantic_ai.models.groq import GroqModel
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.groq import GroqProvider
 from pydantic_ai.providers.openai import OpenAIProvider
-from pydantic_ai.providers.deepseek import DeepSeekProvider
 from pydantic_ai.usage import Usage, UsageLimits
 
 # ── init env & logging ────────────────────────────────────────────────────
@@ -105,8 +104,8 @@ groq_model = GroqModel(
     provider=GroqProvider(api_key=os.getenv("GROQ_API_KEY", "")),
 )
 vision_model = OpenAIModel(
-    'deepseek-reasoner',
-    provider=DeepSeekProvider(api_key=os.getenv("DEEPSEEK_API_KEY", "")),
+    "gpt-4o-mini",
+    provider=OpenAIProvider(api_key=os.getenv("OPENAI_API_KEY", ""))
 )
 
 # ── MCP servers ───────────────────────────────────────────────────────────
