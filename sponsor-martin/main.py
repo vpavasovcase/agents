@@ -14,6 +14,7 @@ from pydantic_ai.mcp import MCPServer, MCPServerStdio # Assuming local MCP serve
 # --- Configuration ---
 load_dotenv(override=True)
 logfire.configure() # Basic Logfire configuration
+Agent.instrument_all()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
@@ -74,9 +75,9 @@ GMAIL_MCP_SERVER_COMMAND = ['npx', '-y', '@gongrzhe/gmail-mcp-server', 'stdio'] 
 DUCKDUCKGO_TOOL_ID = "duckduckgo_search" # This is a placeholder, actual tool ID might differ
 
 mcp_servers_config = [
-    # MCPServerStdio(cmd=MEMORY_MCP_SERVER_COMMAND[0], args=MEMORY_MCP_SERVER_COMMAND[1:]),
-    # MCPServerStdio(cmd=FIRECRAWL_MCP_SERVER_COMMAND[0], args=FIRECRAWL_MCP_SERVER_COMMAND[1:]),
-    # MCPServerStdio(cmd=GMAIL_MCP_SERVER_COMMAND[0], args=GMAIL_MCP_SERVER_COMMAND[1:]),
+    MCPServerStdio('npx', ['-y', '@modelcontextprotocol/server-memory']),
+    MCPServerStdio('npx', ['-y', '@mendableai/firecrawl-mcp-server']),
+    MCPServerStdio('npx', ['-y', '@gongrzhe/gmail-mcp-server']),
     # Note: You need to ensure these servers are correctly configured and PydanticAI can connect.
     # The example in your prompt used absolute paths for some servers, adapt as needed.
     # For servers not managed by PydanticAI directly (e.g., hosted elsewhere),
