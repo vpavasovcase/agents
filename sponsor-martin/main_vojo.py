@@ -57,14 +57,9 @@ async def main():
         env={"FIRECRAWL_API_KEY": os.getenv("FIRECRAWL_API_KEY", "")},
     )
     # Gmail server (Gmail integration)
-    gmail_server = MCPServerStdio(
-        'docker', args=[
-            'run', '-i', '--rm',
-            '-v', 'mcp-gmail:/gmail-server',
-            '-e', 'GMAIL_CREDENTIALS_PATH=/gmail-server/credentials.json',
-            'mcp/gmail'
-        ]
-    )
+    gmail_server = MCPServerStdio("npx", ["@gongrzhe/server-gmail-autoauth-mcp"])
+
+    
 
     # ------------------------------------------
     # Create the PydanticAI agent
