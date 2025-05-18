@@ -12,17 +12,18 @@ async-timeout
 pydantic-ai-slim[duckduckgo]
 pydantic[email]
 
-poppler-utils
-pytesseract 
+# System packages installed in Dockerfile:
+# poppler-utils
+# tesseract-ocr
+# tesseract-ocr-hrv
+pytesseract
 pdf2image
 
 #noa
 asyncpg
 
-
-
-#Word MCP server
-mcp[cli]
+#emanuel
 python-docx
-msoffcrypto-tool
+pymupdf
 docx2pdf
+num2words>=0.5.13

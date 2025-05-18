@@ -28,6 +28,7 @@ import logfire
 from pydantic import BaseModel
 from pydantic_ai import Agent
 from pydantic_ai.models.groq import GroqModel
+from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.groq import GroqProvider
 from pydantic_ai.mcp import MCPServerStdio
 from pydantic_ai.usage import Usage, UsageLimits
