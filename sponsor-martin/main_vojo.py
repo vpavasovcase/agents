@@ -292,7 +292,12 @@ async def main() -> None:
                     # Use event_agent.run directly with a prompt that instructs the agent to use the firecrawl_extract tool
                     extract_prompt = f"""
                     Use the firecrawl crawl tool to analyze this website: {url}, and find the company name, contact email, and contact person (if available).
-                    Return the extracted information in JSON format.
+                    Return the extracted information in JSON format with these fields:
+                    - "name": The company name
+                    - "email" or "contact_email": The contact email address
+                    - "contact_person": The name of the contact person (if available)
+
+                    It's important to include at least one of: company name, email address, or contact person.
                     """
 
                     extract_response = await event_agent.run(extract_prompt)
@@ -310,14 +315,16 @@ async def main() -> None:
                             # Try to parse the entire string as JSON
                             parsed = json.loads(extract_raw)
                             if isinstance(parsed, list):
-                                batch_contacts = [c for c in parsed if isinstance(c, dict) and "name" in c]
+                                # Accept contacts with either name, email, or contact_email
+                                batch_contacts = [c for c in parsed if isinstance(c, dict) and
+                                                 ("name" in c or "email" in c or "contact_email" in c)]
                                 contacts.extend(batch_contacts)
-                            elif isinstance(parsed, dict) and "name" in parsed:
+                            elif isinstance(parsed, dict) and ("name" in parsed or "email" in parsed or "contact_email" in parsed):
                                 contacts.append(parsed)
                             elif isinstance(parsed, dict):
                                 # Check if there's a nested structure
                                 for key, value in parsed.items():
-                                    if isinstance(value, dict) and "name" in value:
+                                    if isinstance(value, dict) and ("name" in value or "email" in value or "contact_email" in value):
                                         contacts.append(value)
                         except json.JSONDecodeError:
                             # Try to find JSON objects in the text
@@ -328,7 +335,7 @@ async def main() -> None:
                             for json_str in json_matches:
                                 try:
                                     parsed = json.loads(json_str)
-                                    if isinstance(parsed, dict) and "name" in parsed:
+                                    if isinstance(parsed, dict) and ("name" in parsed or "email" in parsed or "contact_email" in parsed):
                                         contacts.append(parsed)
                                 except json.JSONDecodeError:
                                     continue
@@ -338,13 +345,16 @@ async def main() -> None:
                         # Cast to Any to avoid type checking issues
                         from typing import Any
                         extract_list = cast(List[Any], extract_raw)
-                        batch_contacts = [c for c in extract_list if isinstance(c, dict) and "name" in c]
+                        batch_contacts = [c for c in extract_list if isinstance(c, dict) and
+                                         ("name" in c or "email" in c or "contact_email" in c)]
                         contacts.extend(batch_contacts)
-                    elif isinstance(extract_raw, dict) and "name" in cast(Dict[str, Any], extract_raw):
+                    elif isinstance(extract_raw, dict) and ("name" in cast(Dict[str, Any], extract_raw) or
+                                                           "email" in cast(Dict[str, Any], extract_raw) or
+                                                           "contact_email" in cast(Dict[str, Any], extract_raw)):
                         contacts.append(cast(Dict[str, Any], extract_raw))
                 except Exception as e:
                     logfire.error(f"Error extracting contact information from url {url}: {str(e)}")
-                
+
                 # Add a delay of 5 seconds after each loop iteration
                 await asyncio.sleep(5)
 
@@ -357,8 +367,10 @@ async def main() -> None:
             # Draft + save Gmail emails ------------------------------
             for c in contacts:
                 print(f"Drafting email for {c}")
-                email = cast(str, c.get("email", ""))
+                # Try to get email from either "email" or "contact_email" field
+                email = cast(str, c.get("email", c.get("contact_email", "")))
                 if not email:
+                    print(f"⚠️  No email found for contact: {c}")
                     continue
                 name = cast(str, c.get("name", "Valued Sponsor"))
                 person = cast(str, c.get("contact_person", "Sir/Madam"))
