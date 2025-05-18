@@ -63,6 +63,7 @@ When extracting company information:
 - Find the official company name
 - Locate contact email addresses (preferably for sponsorship or marketing departments)
 - Keep in mind the sites are in language of country {country}
+- Do not draft emails after extracting contact information
 
 When drafting sponsorship emails:
 - Personalize each email to the specific company
