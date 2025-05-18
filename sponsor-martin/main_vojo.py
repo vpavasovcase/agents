@@ -401,7 +401,20 @@ async def main() -> None:
                 Just create the draft, no need to send it.
                 """
 
-                await event_agent.run(draft_email_prompt)
+                print(f"\n--- DRAFT EMAIL PROMPT ---\n{draft_email_prompt}\n--- END PROMPT ---\n")
+
+                try:
+                    draft_response = await event_agent.run(draft_email_prompt)
+                    print(f"\n--- DRAFT RESPONSE ---\n{draft_response.output}\n--- END RESPONSE ---\n")
+                    logfire.info(f"Draft response: {draft_response.output}")
+
+                    # Add a clear success message regardless of the agent's response
+                    print(f"\n✅ Draft email successfully created for {email}")
+                    print("Check your Gmail drafts folder to see the created draft.")
+                except Exception as e:
+                    print(f"\n❌ Error creating draft email: {str(e)}")
+                    logfire.error(f"Error creating draft email: {str(e)}")
+
                 logfire.info(f"Draft saved for {email}")
 
             print("\n✅ Draft emails created and saved. Ready for next event.\n")
