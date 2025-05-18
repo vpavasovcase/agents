@@ -13,8 +13,8 @@ import json
 
 """Sponsor‑finding & email‑drafting CLI agent
 
-Runs a loop that asks for event details, searches the web for 20 potential
-sponsors, extracts contact data, and drafts Gmail emails asking for
+Runs a loop that asks for event details, searches the web for a configurable number
+of potential sponsors, extracts contact data, and drafts Gmail emails asking for
 sponsorship. Uses DuckDuckGo search tool for finding potential sponsors,
 Firecrawl for extracting contact information from websites, and Gmail MCP server
 for email drafting, all powered by a Groq LLaMA‑4 model.
@@ -29,6 +29,11 @@ str.get() errors.
 load_dotenv()
 logfire.configure()
 Agent.instrument_all()
+
+# -------------------------------------------------
+# Constants
+# -------------------------------------------------
+MAX_SPONSORS = 3  # Maximum number of potential sponsors to find
 
 # -------------------------------------------------
 # Pydantic models
@@ -68,7 +73,7 @@ async def main() -> None:
         "meta-llama/llama-4-maverick-17b-128e-instruct",
         provider=GroqProvider(api_key=os.getenv("GROQ_API_KEY", "")),
     )
-    agent = Agent(model=llm_model, mcp_servers=[memory_server, firecrawl_server, gmail_server], tools=[duckduckgo_search_tool(max_results=3)], )
+    agent = Agent(model=llm_model, mcp_servers=[memory_server, firecrawl_server, gmail_server], tools=[duckduckgo_search_tool(max_results=20)], )
 
     print("=== Sponsorship Email CLI Agent ===")
     print("Type 'exit' at any prompt to quit.\n")
@@ -122,50 +127,77 @@ async def main() -> None:
             # DuckDuckGo search ----------------------------------------
             # Use the duckduckgo_search_tool through the agent
             search_prompt = (
-                f"Search the web for potential sponsors for {event_info.event_type} in {event_info.location.city}, {event_info.location.country}. "
-                f"Focus on {event_info.sponsor_types or 'local businesses'}. "
-                f"Return a list of 20 relevant company websites that might be interested in sponsoring this event. "
-                f"Use the duckduckgo_search tool to find these websites."
+                f"INSTRUCTIONS: Make EXACTLY ONE search using the duckduckgo_search tool. No more, no less.\n\n"
+                f"Search query to use: '{search_query}'\n\n"
+                f"Context: Looking for potential sponsors for {event_info.event_type} in {event_info.location.city}, {event_info.location.country}. "
+                f"Focus on {event_info.sponsor_types or 'local businesses'}.\n\n"
+                f"Return format: A list of up to {MAX_SPONSORS} URLs to company websites. Format your response as a numbered list with ONLY the URLs, one per line, like this:\n"
+                f"1. https://example1.com\n"
+                f"2. https://example2.com\n"
+                f"3. https://example3.com\n\n"
+                f"CRITICAL: Make only ONE call to the duckduckgo_search tool. Do not make multiple search calls."
             )
             search_response = await agent.run(search_prompt)
+            logfire.info("Received search response from agent")
 
             # Extract URLs from the search response
-            urls = search_response.output
-            print("Search raw output:", urls)
+            search_output = search_response.output
+            print("Search output:", search_output)
+            logfire.info(f"Search response type: {type(search_output)}")
+
+            # Parse URLs from the search response string
+            urls = []
+            if isinstance(search_output, str):
+                # Look for URLs in the text using a more robust pattern matching approach
+                import re
+                # This pattern matches URLs more accurately, including those in numbered lists
+                url_pattern = r'(?:https?://(?:www\.)?|www\.)[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?:/[^\s\)\]\"\']*)*'
+                urls = re.findall(url_pattern, search_output)
+
+                # Clean up URLs to ensure they have proper http/https prefix
+                cleaned_urls = []
+                for url in urls:
+                    if not url.startswith(('http://', 'https://')):
+                        url = 'https://' + url
+                    cleaned_urls.append(url)
+                urls = cleaned_urls
+            elif isinstance(search_output, list):
+                # If by chance it's already a list, use it directly
+                urls = search_output
+
+            # Remove duplicate URLs while preserving order
+            unique_urls = []
+            seen = set()
+            for url in urls:
+                if url not in seen:
+                    seen.add(url)
+                    unique_urls.append(url)
+            urls = unique_urls
 
             if not urls:
                 print("\n⚠️  No URLs found. Try again.\n")
                 continue
-            logfire.info(f"Collected {len(urls)} URLs")
+
+            # Print the extracted URLs for debugging
+            print("\nExtracted URLs:")
+            for i, url in enumerate(urls[:MAX_SPONSORS], 1):
+                print(f"{i}. {url}")
+            print()
+
+            logfire.info(f"Collected {len(urls)} unique URLs")
 
             # Extract contacts using Firecrawl ------------------------------
             logfire.info("Extracting contact information from websites using Firecrawl")
 
-            # Process URLs in smaller batches to avoid overwhelming the system
+            # Process URLs one at a time
             contacts = []
-            batch_size = 1  # Process 1 URL at a time
 
-            for i in range(0, min(len(urls), 10), batch_size):
-                batch_urls = urls[i:i+batch_size]
-                logfire.info(f"Processing batch {i//batch_size + 1} with {len(batch_urls)} URLs")
+            for url in urls[:MAX_SPONSORS]:
 
                 try:
                     # Use agent.run directly with a prompt that instructs the agent to use the firecrawl_extract tool
                     extract_prompt = f"""
-                    Use the firecrawl_extract tool to extract contact information from the following URL(s): {batch_urls}.
-
-                    Extract the company name, contact email, and contact person (if available).
-
-                    Use this schema for extraction:
-                    {{
-                        "type": "object",
-                        "properties": {{
-                            "name": {{"type": "string", "description": "The company name"}},
-                            "email": {{"type": "string", "description": "The contact email address"}},
-                            "contact_person": {{"type": "string", "description": "The name of a contact person if available"}}
-                        }},
-                        "required": ["name"]
-                    }}
+                    Use the firecrawl crawl tool to analyze this website: {url}, and find the company name, contact email, and contact person (if available).
 
                     Return the extracted information in JSON format.
                     """
@@ -173,7 +205,7 @@ async def main() -> None:
                     extract_response = await agent.run(extract_prompt)
                     extract_raw = extract_response.output
 
-                    logfire.info(f"Extraction result for batch {i//batch_size + 1}: {extract_raw}")
+                    logfire.info(f"Extraction result for url {url}: {extract_raw}")
 
                     # Process the extraction results for this batch
                     # The response from agent.run will be different from call_tool
@@ -219,17 +251,9 @@ async def main() -> None:
                     elif isinstance(extract_raw, dict) and "name" in cast(Dict[str, Any], extract_raw):
                         contacts.append(cast(Dict[str, Any], extract_raw))
                 except Exception as e:
-                    logfire.error(f"Error extracting contact information from batch {i//batch_size + 1}: {str(e)}")
-
-                # Add a small delay between batches to avoid rate limiting
-                if i + batch_size < min(len(urls), 10):
-                    await asyncio.sleep(2)
-
-
+                    logfire.error(f"Error extracting contact information from url {url}: {str(e)}")
 
             # Check if we found any valid contacts
-            if not contacts:
-                logfire.error("No contact information extracted from any URL.")
 
             if not contacts:
                 print("\n⚠️  No contacts found.\n")
@@ -262,9 +286,9 @@ async def main() -> None:
                 draft_email_prompt = f"""
                 Use the draft_email tool to create a draft email with the following details:
 
-                To: {draft.to}
-                Subject: {draft.subject}
-                Body: {draft.body}
+                The recipient email is {draft.to[0]}, the subject is '{draft.subject}', and the body is:
+
+                {draft.body}
 
                 Just create the draft, no need to send it.
                 """
