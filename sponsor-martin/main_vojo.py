@@ -299,6 +299,7 @@ async def main() -> None:
                     - "contact_person": The name of the contact person (if available)
 
                     It's important to include at least one of: company name, email address, or contact person.
+                    Do not draft any emails yet.
                     """
 
                     extract_response = await event_agent.run(extract_prompt)
