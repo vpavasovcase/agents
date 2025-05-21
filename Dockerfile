@@ -15,6 +15,9 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     lsb-release \
     build-essential \
+    poppler-utils \
+    tesseract-ocr \
+    tesseract-ocr-hrv \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python (latest)
