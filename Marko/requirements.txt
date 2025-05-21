@@ -9,5 +9,4 @@ nest-asyncio
 aioconsole
 aiohttp
 async-timeout
-pydantic[email]
 openai

@@ -1,25 +1,3 @@
-# bestbuy_agent.py
-"""Best‑Buy Shopping Agent – PydanticAI (**uses .env for secrets**).
-
-* Loads environment variables from a local **`.env`** file via `python‑dotenv`.
-* Deprecated `parse_obj_as` replaced by `TypeAdapter(...)`.
-* All previous type issues resolved.
-
-Run:
-```bash
-python bestbuy_agent.py
-```
-
-* Replaced deprecated `parse_obj_as` with `TypeAdapter(List[HttpUrl]).validate_python(...)`.
-* Retained `TypeAdapter` import; no parse_obj_as anymore.
-* SearchCriteria keeps `currency` field.
-* All Pylance errors resolved.
-
-Run:
-```bash
-python bestbuy_agent.py
-```
-"""
 from __future__ import annotations
 
 import asyncio
@@ -128,7 +106,7 @@ async def scrape_products(shop_url: HttpUrl, criteria: SearchCriteria) -> List[P
     for href, title, price_str, _ in pattern.findall(html):
         price = float(price_str.replace(",", "."))
         if price <= criteria.budget * 1.01:
-            url = href if href.startswith("http") else f"{shop_url.rstrip('/')}/{href.lstrip('/')}"
+            url = href if href.startswith("http") else f"{str(shop_url).rstrip('/')}/{href.lstrip('/')}"
             products.append(
                 Product(
                     name=re.sub("<.*?>", "", title)[:120],
