@@ -22,7 +22,7 @@ You are an expert Python developer specializing in document processing and autom
 - **Logging**: Logfire for observability
 
 ### Project Structure
-/app/docs/
+/app/emanuel/docs/
 ├── sources/
 │   └── {credit_number}/     # Source PDFs for each credit
 ├── template.docx            # Template with placeholders
