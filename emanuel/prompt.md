@@ -2,17 +2,15 @@
 
 We are building an AI agent that automates the process of filling out a loan agreement template. The agent will be able to extract data from a couple of credit application documents, validate the data, and fill out the template. The agent will be able to handle missing data by asking the user for the missing information. The agent will be able to handle errors by asking the user to confirm the data. The agent will be able to handle multiple languages.
 
+You are to plan and build the agent. Think about the workflow and the tools that are needed. Plan the arcitecture, should we use multiple agents or one, how they communicate, and reflect on the result after. Check the docs for multiple agents: https://ai.pydantic.dev/multi-agent-applications/
+
 ## Workflow
 
-We will need multiple agents for this. The workflow is as follows:
-
-1. The user provides the credit number in the CLI loop.
-2. The documents are in the `docs/sources/<credit>` folder. The provided documents are in various forms, some are PDF with text, but some are PDF with image of the scanned documents. We need to convert the PDFs to image, then do the OCR. We will use `pdf2image` and `pytesseract` for this. Let's name this agent Read Agent. He will save the extracted text from all of the documents in a variable called `extracted_text`. When the Read Agent is finished, he will call Analysis Agent. Use server-filesystem MCP server for accessing the files.
-3.  Analysis Agent will analyze the template which is in the `docs/template.docx` file and extract fileds which have to be filled out. He will save the fields in a variable `required_fields` and call the Search Agent. He will also analyze the `docs/template.pdf` which has some comments that can help him better understand the context of the fields, and when he does, he will check if `required_fields` are correcly formed. `required_fields` will contain the strings from the `docs/template.docx` that need to be replaced with actual values.
-4. The Search Agent will then loop over `required_fields` and search for the data in the `extracted_text`. If the data is found, he will save it in a variable called `found_data` which will be a dictionary with `required_fields` as keys and the found data as values. If the data is not found or is ambiguous and requires users decision, he will save the field in a variable called `missing_data`. When he is finished, he will call the Ask Agent.
-5. The Ask Agent will ask the user for the `missing_data` one by one. He will formulate each question in a way that allows the user to understand the context of the question. When he gets an answer, he will add it to found_data. When all `missing_data` is found, he will call the Fill Agent.
-6. The Fill Agent will then make a copy of the `docs/template.docx` file into `docs/completed` folder, named as the credit number, e.g. `3254563456345.docx`. He will then replace the strings from keys from `found_data` with corresponding values from `found_data`. When he is finished, he will call the Final Agent. Use office-word-mcp-server for accessing the Word documents.
-7. The Final Agent will then validate the filled out template and check if the filled document makes sense. If there are any errors, he will decide if he should loop back to any of the other agents and repeat the process; OR inform the user what the problem seems to be. If there are no errors, he will inform the user the task is finished and hive him the path to the filled document.
+- The user provides the credit number in the CLI loop.
+- The documents are in the `docs/sources/<credit>` folder. The provided documents are in various forms, some are PDF with text, but some are PDF with image of the scanned documents. We need to convert the PDFs to image, then do the OCR. We will use `pdf2image` and `pytesseract` for this. This functionality should be in a tool that agent can use: https://ai.pydantic.dev/tools/
+- Agent neets to analyze the template which is in the `docs/template.docx` file and extract fileds which have to be filled out. He will also analyze the `docs/template.pdf` which has comments that can help him better understand the context of the fields.
+- The Agent will then try to find all the required data from the documents. If the data is not found or is ambiguous and requires users decision, he will ask the user for it. He will formulate each question in a way that allows the user to understand the context of the question. When he gets an answer , the agent will then make a copy of the `docs/template.docx` file into `docs/completed` folder, named as the credit number, e.g. `3254563456345.docx`. He will then fill out the template.
+- The Agent will then validate the filled out template and check if the filled document makes sense. If there are any errors, he will decide if he should repeat some parts of the process; OR inform the user what the problem seems to be. If there are no errors, he will inform the user the task is finished and give him the path to the filled document.
 
 ## logging
 Use Logfire:
@@ -147,13 +145,9 @@ ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 # Set a default command
 CMD ["/bin/bash"]
 ```
-
 # Instructions
 - the app will be run from cli.
 - make it in one python file if possible
 - use MCP servers for the tools where appropriate
 - when planning the app, YOU MUST consult PydanticAI docs at https://ai.pydantic.dev/ and all the other docs mentioned in the prompt. don't use your training data, use the current docs.
 - think about the workflow in this prompt and see if it makes sense and if you can improve it.
-- keep going until the job is completed.
-- if you are unsure about something, don't halucinate, resarch it online first and if you can't find the answer, ask me.
-- plan thouroghly before any tool call, and reflect on the result after.
