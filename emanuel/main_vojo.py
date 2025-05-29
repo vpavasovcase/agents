@@ -1,5 +1,6 @@
 """
-Loan Agreement Document Processor
+Details about what we are building are in emanuel/sys_prompt.md
+Loan Agreement Document Processor 9919479387
 Automates filling loan agreement templates by extracting data from credit documents
 """
 
@@ -7,18 +8,17 @@ import os
 import re
 import asyncio
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict
 from datetime import datetime
-import shutil
 
-from pydantic import BaseModel, Field, validator
-from pydantic_ai import Agent, ModelRetry, Tool, RunContext
+from pydantic import BaseModel, Field, field_validator
+from pydantic_ai import Agent, ModelRetry, Tool
 from pydantic_ai.models.groq import GroqModel
+from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.providers.groq import GroqProvider
+from pydantic_ai.mcp import MCPServerStdio
 import logfire
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-from httpx import AsyncClient
-from PIL import Image
 import pytesseract
 from pdf2image import convert_from_path
 import logging
@@ -30,12 +30,15 @@ logger = logging.getLogger(__name__)
 # Configure Logfire
 logfire.configure()
 
+# Set base directory
+ROOT_DIR = Path("/app/emanuel/docs").resolve()
+
 # Data Models
 class Address(BaseModel):
     street: str
     city: str
     country: str = "Hrvatska"
-    
+
     def __str__(self):
         return f"{self.street}, {self.city}"
 
@@ -43,8 +46,9 @@ class Person(BaseModel):
     name: str = Field(..., description="Full name (IME I PREZIME)")
     address: Address
     oib: str = Field(..., pattern=r"^\d{11}$", description="Personal identification number (OIB)")
-    
-    @validator('oib')
+
+    @field_validator('oib')
+    @classmethod
     def validate_oib(cls, v):
         if len(v) != 11 or not v.isdigit():
             raise ValueError("OIB must be exactly 11 digits")
@@ -59,7 +63,7 @@ class CreditInfo(BaseModel):
     contract_date: str = Field(..., description="Original contract date")
     is_nhb_credit: bool = Field(False, description="Is this an ex-NHB credit")
     is_hrk_converted: bool = Field(False, description="Was the credit converted from HRK to EUR")
-    
+
 class LoanAgreement(BaseModel):
     """Complete loan agreement data structure"""
     credit_user: Person
@@ -74,82 +78,57 @@ class LoanAgreement(BaseModel):
     change_payment_schedule: bool = Field(False, description="Whether payment schedule is changed")
 
 # Tools
-class DocumentProcessor:
-    """Handles document processing operations"""
-    
-    def __init__(self, base_path: str = "/app/docs"):
-        self.base_path = Path(base_path)
-        
-    async def convert_pdf_to_images(self, pdf_path: Path) -> List[Path]:
-        """Convert PDF to images for OCR"""
-        logger.info(f"Converting PDF to images: {pdf_path}")
-        images = convert_from_path(str(pdf_path))
-        image_paths = []
-        
-        for i, image in enumerate(images):
-            image_path = pdf_path.parent / f"{pdf_path.stem}_page_{i+1}.png"
-            image.save(str(image_path), "PNG")
-            image_paths.append(image_path)
-            
-        return image_paths
-    
-    async def perform_ocr(self, image_path: Path) -> str:
-        """Perform OCR on an image"""
-        logger.info(f"Performing OCR on: {image_path}")
-        # Configure for Croatian language
-        text = pytesseract.image_to_string(
-            str(image_path), 
-            lang='hrv+eng',  # Croatian + English
-            config='--psm 6'  # Uniform text block
-        )
-        return text
-    
-    async def process_pdf_document(self, pdf_path: Path) -> str:
-        """Process a PDF document and extract text"""
-        # First try to extract text directly
-        try:
-            import PyPDF2
-            with open(pdf_path, 'rb') as file:
-                reader = PyPDF2.PdfReader(file)
-                text = ""
-                for page in reader.pages:
-                    page_text = page.extract_text()
-                    if page_text.strip():
-                        text += page_text + "\n"
-                
-                if text.strip():
-                    logger.info("Extracted text directly from PDF")
-                    return text
-        except Exception as e:
-            logger.warning(f"Direct text extraction failed: {e}")
-        
-        # Fall back to OCR
-        logger.info("Falling back to OCR")
-        images = await self.convert_pdf_to_images(pdf_path)
-        
-        full_text = ""
-        for image_path in images:
-            text = await self.perform_ocr(image_path)
-            full_text += text + "\n\n"
-            # Clean up temporary images
-            image_path.unlink()
-            
-        return full_text
-
-# Create document processor tool
-doc_processor = DocumentProcessor()
-
-async def process_pdf_tool(ctx: RunContext[Any], file_path: str) -> str:
-    """Tool to process PDF files and extract text"""
+async def process_pdf_with_ocr(file_path: str) -> str:
+    """Process PDF files and extract text via OCR if needed"""
     path = Path(file_path)
     if not path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
-    
-    text = await doc_processor.process_pdf_document(path)
-    return text
 
-async def extract_data_from_text(ctx: RunContext[Any], text: str, field_type: str) -> Optional[str]:
-    """Tool to extract specific data from text using patterns"""
+    logger.info(f"Processing PDF: {path}")
+
+    # First try to extract text directly
+    try:
+        import fitz  # PyMuPDF
+        doc = fitz.open(str(path))
+        text = ""
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            page_text = page.get_text()  # type: ignore
+            if page_text.strip():
+                text += page_text + "\n"
+        doc.close()
+
+        if text.strip():
+            logger.info("Extracted text directly from PDF")
+            return text
+    except Exception as e:
+        logger.warning(f"Direct text extraction failed: {e}")
+
+    # Fall back to OCR
+    logger.info("Falling back to OCR")
+    images = convert_from_path(str(path))
+
+    full_text = ""
+    for i, image in enumerate(images):
+        # Save temporary image
+        temp_image_path = path.parent / f"temp_{path.stem}_page_{i+1}.png"
+        image.save(str(temp_image_path), "PNG")
+
+        # Perform OCR
+        text = pytesseract.image_to_string(
+            str(temp_image_path),
+            lang='hrv+eng',  # Croatian + English
+            config='--psm 6'  # Uniform text block
+        )
+        full_text += text + "\n\n"
+
+        # Clean up
+        temp_image_path.unlink()
+
+    return full_text
+
+async def extract_data_patterns(text: str, field_type: str) -> Optional[str]:
+    """Extract specific data from text using patterns"""
     patterns = {
         "oib": r"OIB[:\s]*(\d{11})",
         "credit_number": r"(?:broj|number)[:\s]*(\d{10})",
@@ -157,19 +136,28 @@ async def extract_data_from_text(ctx: RunContext[Any], text: str, field_type: st
         "date": r"(\d{1,2}\.\d{1,2}\.\d{4})",
         "name": r"(?:IME I PREZIME|Ime i prezime)[:\s]*([A-ZŠĐČĆŽ][a-zšđčćž]+\s+[A-ZŠĐČĆŽ][a-zšđčćž]+)",
     }
-    
+
     pattern = patterns.get(field_type)
     if not pattern:
         return None
-        
+
     matches = re.findall(pattern, text, re.IGNORECASE)
     return matches[0] if matches else None
 
+# MCP Servers configuration
+mcp_servers: List[MCPServerStdio] = [
+    MCPServerStdio("npx", ["-y", "@modelcontextprotocol/server-filesystem", "/app"]),
+    # Note: Word MCP server might not be available, commenting out for now
+    # MCPServerStdio("uvx", ["--from", "office-word-mcp-server", "word_mcp_server"]),
+]
+
 # Create Groq model
-model = GroqModel(
-    'meta-llama/llama-3.2-90b-vision-preview',
-    api_key=os.getenv('GROQ_API_KEY')
-)
+
+# model = GroqModel(
+#     'llama-3.2-90b-vision-preview',
+#     provider=GroqProvider(api_key=os.getenv('GROQ_API_KEY'))
+# )
+model = OpenAIModel('gpt-4.1-mini', provider=OpenAIProvider(api_key=os.getenv('OPENAI_API_KEY')))
 
 # System prompt
 system_prompt = """You are an expert loan agreement processor for Croatian bank HPB (Hrvatska Poštanska Banka).
@@ -178,6 +166,12 @@ Your task is to extract data from credit documents and fill out loan agreement a
 You understand Croatian banking terminology and can handle both Croatian and English documents.
 You are meticulous about data accuracy and always verify extracted information.
 When data is ambiguous or missing, you clearly communicate what's needed from the user.
+
+You have access to MCP tools for filesystem operations and Word document manipulation.
+Use these tools to:
+1. List and read files in the source directories
+2. Analyze the template document structure
+3. Fill the template with extracted data
 
 Key responsibilities:
 1. Analyze loan agreement templates to understand required fields
@@ -194,285 +188,278 @@ Important rules:
 - For HRK to EUR conversions, use the fixed rate: 1 EUR = 7.53450 HRK
 """
 
-# Create agent
+# Create agent with MCP servers
 agent = Agent(
     model=model,
     system_prompt=system_prompt,
     tools=[
-        Tool(process_pdf_tool, description="Process PDF files and extract text via OCR if needed"),
-        Tool(extract_data_from_text, description="Extract specific data fields from text using patterns"),
+        Tool(process_pdf_with_ocr, description="Process PDF files and extract text via OCR if needed"),
+        Tool(extract_data_patterns, description="Extract specific data fields from text using patterns"),
     ],
-    result_type=LoanAgreement
+    output_type=LoanAgreement,
+    mcp_servers=mcp_servers,
 )
 
-# MCP Integration
-async def setup_mcp_servers():
-    """Setup MCP servers for filesystem and Word operations"""
-    servers = []
-    
-    # Filesystem MCP server
-    fs_server = await stdio_client(
-        StdioServerParameters(
-            command="npx",
-            args=["-y", "@modelcontextprotocol/server-filesystem", "/app/docs"],
-            env={}
-        )
-    )
-    servers.append(fs_server)
-    
-    # Word MCP server
-    word_server = await stdio_client(
-        StdioServerParameters(
-            command="uvx",
-            args=["--from", "office-word-mcp-server", "word_mcp_server"],
-            env={}
-        )
-    )
-    servers.append(word_server)
-    
-    return servers
+# Instrument the agent for Logfire
+Agent.instrument_all()
 
 # Main workflow
 class LoanAgreementProcessor:
     """Main processor orchestrating the workflow"""
-    
+
     def __init__(self):
         self.agent = agent
-        self.base_path = Path("/app/docs")
-        self.mcp_servers = []
-        
-    async def setup(self):
-        """Setup MCP servers and instrument agent"""
-        Agent.instrument_all()
-        self.mcp_servers = await setup_mcp_servers()
-        
-    async def analyze_template(self) -> Dict[str, Any]:
-        """Analyze the template to understand required fields"""
-        template_path = self.base_path / "template.docx"
-        
-        # Read template using MCP Word server
-        async with self.mcp_servers[1] as session:
-            # Get template content and analyze structure
-            template_info = {
-                "required_fields": [
-                    "credit_user", "credit_number", "contract_type",
-                    "amendment_date", "amendment_location", "original_amount"
-                ],
-                "conditional_fields": [
-                    "solidary_debtor", "solidary_guarantors",
-                    "payment_amount", "new_monthly_payment"
-                ],
-                "rules": {
-                    "nhb_credit": "Include merger introduction paragraph",
-                    "hrk_conversion": "Show both HRK and EUR amounts",
-                    "payment_change": "Update monthly payment amount"
-                }
-            }
-            
-        return template_info
-    
-    async def process_credit_documents(self, credit_number: str) -> Dict[str, str]:
-        """Process all documents for a credit number"""
-        source_dir = self.base_path / "sources" / credit_number
-        
-        if not source_dir.exists():
-            raise FileNotFoundError(f"No documents found for credit {credit_number}")
-            
-        all_text = {}
-        
-        # Process all PDFs in the directory
-        for pdf_file in source_dir.glob("*.pdf"):
-            logger.info(f"Processing: {pdf_file}")
-            text = await process_pdf_tool(None, str(pdf_file))
-            all_text[pdf_file.name] = text
-            
-        return all_text
-    
-    async def extract_loan_data(self, documents: Dict[str, str], credit_number: str) -> LoanAgreement:
-        """Extract loan agreement data from documents"""
-        # Combine all document texts
-        combined_text = "\n\n".join(documents.values())
-        
-        # Use agent to extract and structure data
-        initial_data = {
-            "credit_number": credit_number,
-            "documents_text": combined_text
-        }
-        
-        # Run agent with retry logic for missing data
+        self.base_path = ROOT_DIR
+
+    async def process_credit_documents(self, credit_number: str) -> LoanAgreement:
+        """Process all documents for a credit number and extract loan data"""
+
+        # Build the prompt for the agent
+        prompt = f"""
+        Process loan agreement for credit number: {credit_number}
+
+        Steps to follow:
+        1. Use the filesystem MCP tool to list files in /app/emanuel/docs/sources/{credit_number}/
+        2. Read and analyze all PDF documents found
+        3. Extract all relevant information for the loan agreement amendment
+        4. Analyze the template structure (if available)
+        5. Identify which fields need to be filled
+        6. Validate all extracted data
+        7. Return a complete LoanAgreement object with all required information
+
+        If any critical information is missing, ask the user for clarification.
+        Pay special attention to:
+        - Credit user details (name, address, OIB)
+        - Credit numbers and amounts
+        - Dates and locations
+        - Whether this is an ex-NHB credit
+        - Whether there was HRK to EUR conversion
+        """
+
+        # Run agent with retry logic
         max_retries = 3
         retry_count = 0
-        
+
         while retry_count < max_retries:
             try:
-                result = await self.agent.run(
-                    f"Extract loan agreement data from the following documents for credit {credit_number}. "
-                    f"Documents content:\n\n{combined_text[:5000]}..."  # Truncate for context
-                )
-                return result.data
-                
+                # The agent run should happen within the MCP context
+                result = await self.agent.run(prompt)
+                return result.output
+
             except ModelRetry as e:
                 retry_count += 1
                 # Ask user for missing information
                 missing_info = await self.get_missing_info_from_user(e.message)
                 if missing_info:
-                    combined_text += f"\n\nAdditional information from user:\n{missing_info}"
+                    prompt += f"\n\nAdditional information from user:\n{missing_info}"
                 else:
                     raise ValueError(f"Cannot proceed without required information: {e.message}")
-                    
+
         raise ValueError("Failed to extract complete loan agreement data after retries")
-    
+
     async def get_missing_info_from_user(self, prompt: str) -> str:
         """Get missing information from user"""
         print(f"\n⚠️  Missing Information Required: {prompt}")
         user_input = input("Please provide the missing information: ")
         return user_input
-    
+
     async def validate_loan_data(self, loan_data: LoanAgreement) -> List[str]:
         """Validate the extracted loan data"""
         issues = []
-        
+
         # Check required fields
         if not loan_data.credit_user:
             issues.append("Missing credit user information")
-            
+
         if not loan_data.credit_info.credit_number:
             issues.append("Missing credit number")
-            
+
         # Validate OIB format
         if loan_data.credit_user and len(loan_data.credit_user.oib) != 11:
             issues.append(f"Invalid OIB for credit user: {loan_data.credit_user.oib}")
-            
+
         # Check date formats
         try:
             datetime.strptime(loan_data.amendment_date, "%d.%m.%Y.")
         except ValueError:
             issues.append(f"Invalid date format: {loan_data.amendment_date}")
-            
+
         return issues
-    
+
     async def fill_template(self, loan_data: LoanAgreement) -> Path:
-        """Fill the template with loan data"""
-        template_path = self.base_path / "template.docx"
+        """Fill the template with loan data using MCP Word server"""
+
+        # Prepare replacement mappings
+        replacements = self.prepare_replacements(loan_data)
+
+        # Create prompt for filling the template
+        fill_prompt = f"""
+        Fill the loan agreement template with the following data:
+
+        1. Use the Word MCP tool to copy /app/docs/template.docx to /app/docs/completed/{loan_data.credit_info.credit_number}.docx
+        2. Replace all placeholders in the document with the actual values:
+
+        {self.format_replacements_for_prompt(replacements)}
+
+        3. Handle conditional sections:
+           - If this is an ex-NHB credit, keep the merger introduction paragraph
+           - If this is not an ex-NHB credit, remove the merger paragraph
+           - If payment schedule changes, use the appropriate text variant
+
+        4. Save the completed document
+        5. Return the path to the completed document
+        """
+
+        await self.agent.run(fill_prompt)
+
         output_path = self.base_path / "completed" / f"{loan_data.credit_info.credit_number}.docx"
-        
-        # Ensure output directory exists
-        output_path.parent.mkdir(exist_ok=True)
-        
-        # Copy template to output location
-        shutil.copy2(template_path, output_path)
-        
-        # Use MCP Word server to fill the document
-        async with self.mcp_servers[1] as session:
-            # Prepare replacement mappings
-            replacements = {
-                "[IME I PREZIME]": loan_data.credit_user.name,
-                "[Adresa]": str(loan_data.credit_user.address),
-                "[___________]": loan_data.credit_user.oib,
-                "[DD.MM.GGGG.]": loan_data.amendment_date,
-                "[upisati datum slovima]": self.date_to_words(loan_data.amendment_date),
-                "[upisati mjesto]": loan_data.amendment_location,
-                "[__]": str(loan_data.amendment_number),
-                "[9910000000]": loan_data.credit_info.credit_number,
-                "[upisati naziv ugovora – npr. o nenamjenskom kreditu]": loan_data.credit_info.contract_type,
-                "[XX.XXX,XX]": f"{loan_data.credit_info.original_amount:,.2f}",
-                "[VALUTA]": loan_data.credit_info.original_currency,
-                "[upisati slovima iznos]": self.amount_to_words(loan_data.credit_info.original_amount),
-                "IZNOS_KREDITA": f"{loan_data.credit_info.original_amount / 7.53450:,.2f}" if loan_data.credit_info.is_hrk_converted else "",
-                "IZNOS_SL": self.amount_to_words(loan_data.credit_info.original_amount / 7.53450) if loan_data.credit_info.is_hrk_converted else "",
-            }
-            
-            # Add solidary debtor if exists
-            if loan_data.solidary_debtor:
-                replacements.update({
-                    "[IME I PREZIME]": loan_data.solidary_debtor.name,  # This will need proper indexing
-                    "[Adresa]": str(loan_data.solidary_debtor.address),
-                    "[___________]": loan_data.solidary_debtor.oib,
-                })
-            
-            # TODO: Implement actual Word document manipulation via MCP
-            # For now, we'll mark it as completed
-            logger.info(f"Document filled and saved to: {output_path}")
-            
         return output_path
-    
+
+    def prepare_replacements(self, loan_data: LoanAgreement) -> Dict[str, str]:
+        """Prepare replacement mappings for the template"""
+        replacements = {
+            "[IME I PREZIME]": loan_data.credit_user.name,
+            "[Adresa]": str(loan_data.credit_user.address),
+            "[___________]": loan_data.credit_user.oib,
+            "[DD.MM.GGGG.]": loan_data.amendment_date,
+            "[upisati datum slovima]": self.date_to_words(loan_data.amendment_date),
+            "[upisati mjesto]": loan_data.amendment_location,
+            "[__]": str(loan_data.amendment_number),
+            "[9910000000]": loan_data.credit_info.credit_number,
+            "[upisati naziv ugovora – npr. o nenamjenskom kreditu]": loan_data.credit_info.contract_type,
+            "[XX.XXX,XX]": f"{loan_data.credit_info.original_amount:,.2f}",
+            "[VALUTA]": loan_data.credit_info.original_currency,
+            "[upisati slovima iznos]": self.amount_to_words(loan_data.credit_info.original_amount),
+        }
+
+        # Add EUR conversion if applicable
+        if loan_data.credit_info.is_hrk_converted:
+            eur_amount = loan_data.credit_info.original_amount / 7.53450
+            replacements.update({
+                "IZNOS_KREDITA": f"{eur_amount:,.2f}",
+                "IZNOS_SL": self.amount_to_words(eur_amount),
+            })
+
+        # Add payment information if available
+        if loan_data.payment_amount:
+            replacements["[XX.XXX,XX]"] = f"{loan_data.payment_amount:,.2f}"
+
+        if loan_data.new_monthly_payment:
+            replacements["[XX.XXX,XX]"] = f"{loan_data.new_monthly_payment:,.2f}"
+
+        return replacements
+
+    def format_replacements_for_prompt(self, replacements: Dict[str, str]) -> str:
+        """Format replacements for the agent prompt"""
+        lines = []
+        for placeholder, value in replacements.items():
+            lines.append(f"   - Replace '{placeholder}' with '{value}'")
+        return "\n".join(lines)
+
     def date_to_words(self, date_str: str) -> str:
         """Convert date to Croatian words"""
-        # Simplified implementation
         months = {
             "01": "siječnja", "02": "veljače", "03": "ožujka",
             "04": "travnja", "05": "svibnja", "06": "lipnja",
             "07": "srpnja", "08": "kolovoza", "09": "rujna",
             "10": "listopada", "11": "studenog", "12": "prosinca"
         }
-        
+
         day, month, year = date_str.rstrip('.').split('.')
         day_word = self.number_to_words(int(day))
         month_word = months.get(month, month)
         year_word = f"dvije tisuće dvadeset {self.number_to_words(int(year[-1]))}"
-        
+
         return f"{day_word} {month_word} {year_word}"
-    
+
     def number_to_words(self, num: int) -> str:
         """Convert number to Croatian words (simplified)"""
-        # Simplified mapping
         words = {
             1: "jedan", 2: "dva", 3: "tri", 4: "četiri", 5: "pet",
             6: "šest", 7: "sedam", 8: "osam", 9: "devet", 10: "deset",
-            20: "dvadeset", 30: "trideset"
+            11: "jedanaest", 12: "dvanaest", 13: "trinaest", 14: "četrnaest",
+            15: "petnaest", 16: "šesnaest", 17: "sedamnaest", 18: "osamnaest",
+            19: "devetnaest", 20: "dvadeset", 30: "trideset"
         }
-        
-        if num <= 10:
-            return words.get(num, str(num))
-        elif num < 20:
-            return f"{words[num-10]}naest"
-        elif num < 30:
-            return f"dvadeset {words[num-20]}" if num > 20 else "dvadeset"
+
+        if num in words:
+            return words[num]
+        elif 20 < num < 30:
+            return f"dvadeset {words[num-20]}"
+        elif 30 < num < 40:
+            return f"trideset {words[num-30]}"
         else:
             return str(num)
-    
+
     def amount_to_words(self, amount: float) -> str:
         """Convert amount to Croatian words (simplified)"""
         # This is a simplified version
         # In production, use a proper number-to-words library
-        return f"{int(amount)} eura"
-    
+        whole = int(amount)
+        decimal = int((amount - whole) * 100)
+
+        result = f"{self.number_to_thousands_words(whole)} eura"
+        if decimal > 0:
+            result += f" i {decimal}/100"
+
+        return result
+
+    def number_to_thousands_words(self, num: int) -> str:
+        """Convert larger numbers to words (simplified)"""
+        if num < 1000:
+            return self.number_to_words(num)
+
+        thousands = num // 1000
+        remainder = num % 1000
+
+        result = ""
+        if thousands == 1:
+            result = "tisuću"
+        elif thousands < 5:
+            result = f"{self.number_to_words(thousands)} tisuće"
+        else:
+            result = f"{self.number_to_words(thousands)} tisuća"
+
+        if remainder > 0:
+            result += f" {self.number_to_words(remainder)}"
+
+        return result
+
     async def run(self, credit_number: str):
         """Main workflow execution"""
         try:
             logger.info(f"Starting processing for credit: {credit_number}")
-            
-            # 1. Analyze template
-            template_info = await self.analyze_template()
-            logger.info("Template analysis completed")
-            
-            # 2. Process source documents
-            documents = await self.process_credit_documents(credit_number)
-            logger.info(f"Processed {len(documents)} documents")
-            
-            # 3. Extract loan data
-            loan_data = await self.extract_loan_data(documents, credit_number)
-            logger.info("Data extraction completed")
-            
-            # 4. Validate data
-            issues = await self.validate_loan_data(loan_data)
-            if issues:
-                logger.warning(f"Validation issues found: {issues}")
-                # Ask user to confirm or correct
-                print("\n⚠️  Validation Issues:")
-                for issue in issues:
-                    print(f"  - {issue}")
-                    
-                proceed = input("\nProceed anyway? (yes/no): ")
-                if proceed.lower() != 'yes':
-                    raise ValueError("User cancelled due to validation issues")
-            
-            # 5. Fill template
-            output_path = await self.fill_template(loan_data)
-            logger.info(f"✅ Document completed: {output_path}")
-            
-            print(f"\n✅ Success! Document saved to: {output_path}")
-            
+
+            # Start MCP servers and run the workflow within the context
+            async with self.agent.run_mcp_servers():
+                # 1. Extract loan data from documents
+                loan_data = await self.process_credit_documents(credit_number)
+                logger.info("Data extraction completed")
+
+                # 2. Validate data
+                issues = await self.validate_loan_data(loan_data)
+                if issues:
+                    logger.warning(f"Validation issues found: {issues}")
+                    # Ask user to confirm or correct
+                    print("\n⚠️  Validation Issues:")
+                    for issue in issues:
+                        print(f"  - {issue}")
+
+                    proceed = input("\nProceed anyway? (yes/no): ")
+                    if proceed.lower() != 'yes':
+                        raise ValueError("User cancelled due to validation issues")
+
+                # 3. Fill template (simplified for now)
+                # output_path = await self.fill_template(loan_data)
+                # logger.info(f"✅ Document completed: {output_path}")
+
+                print(f"\n✅ Success! Data extraction completed")
+                print(f"\nExtracted loan data summary:")
+                print(f"  - Credit User: {loan_data.credit_user.name}")
+                print(f"  - Credit Number: {loan_data.credit_info.credit_number}")
+                print(f"  - Amendment Number: {loan_data.amendment_number}")
+                print(f"  - Amendment Date: {loan_data.amendment_date}")
+
         except Exception as e:
             logger.error(f"Error processing credit {credit_number}: {e}")
             print(f"\n❌ Error: {e}")
@@ -483,35 +470,30 @@ async def main():
     """Main CLI interface"""
     print("🏦 HPB Loan Agreement Processor")
     print("=" * 40)
-    
+
     processor = LoanAgreementProcessor()
-    await processor.setup()
-    
+
     while True:
         try:
             credit_number = input("\nEnter credit number (or 'exit' to quit): ")
-            
+
             if credit_number.lower() == 'exit':
                 print("Goodbye!")
                 break
-                
+
             # Validate credit number format
             if not re.match(r'^\d{10}$', credit_number):
                 print("❌ Invalid credit number format. Must be 10 digits.")
                 continue
-                
+
             await processor.run(credit_number)
-            
+
         except KeyboardInterrupt:
             print("\n\nInterrupted by user")
             break
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
             print(f"\n❌ Unexpected error: {e}")
-            
-    # Cleanup
-    for server in processor.mcp_servers:
-        await server.__aexit__(None, None, None)
 
 if __name__ == "__main__":
     asyncio.run(main())
