@@ -1,6 +1,7 @@
 """
 Details about what we are building are in emanuel/sys_prompt.md
-Loan Agreement Document Processor 9919479387
+Loan Agreement Document Processor
+Test credit number: 9919479387
 Automates filling loan agreement templates by extracting data from credit documents
 """
 
@@ -147,11 +148,8 @@ async def extract_data_patterns(text: str, field_type: str) -> Optional[str]:
 # MCP Servers configuration
 mcp_servers: List[MCPServerStdio] = [
     MCPServerStdio("npx", ["-y", "@modelcontextprotocol/server-filesystem", "/app"]),
-    # Note: Word MCP server might not be available, commenting out for now
-    # MCPServerStdio("uvx", ["--from", "office-word-mcp-server", "word_mcp_server"]),
+    MCPServerStdio("uvx", ["--from", "office-word-mcp-server", "word_mcp_server"]),
 ]
-
-# Create Groq model
 
 # model = GroqModel(
 #     'llama-3.2-90b-vision-preview',
@@ -182,7 +180,7 @@ Key responsibilities:
 
 Important rules:
 - OIB must be exactly 11 digits
-- Dates should be in DD.MM.YYYY format
+- Dates should be in DD.MM.YYYY or DD.MM.YYYY. format
 - Amounts should include currency (EUR or HRK)
 - For ex-NHB credits, note the migration details
 - For HRK to EUR conversions, use the fixed rate: 1 EUR = 7.53450 HRK
@@ -214,26 +212,53 @@ class LoanAgreementProcessor:
     async def process_credit_documents(self, credit_number: str) -> LoanAgreement:
         """Process all documents for a credit number and extract loan data"""
 
-        # Build the prompt for the agent
-        prompt = f"""
-        Process loan agreement for credit number: {credit_number}
+        # Step 1: List available documents
+        list_prompt = f"""
+        Use the filesystem MCP tool to list files in /app/emanuel/docs/sources/{credit_number}/
+        Return only the list of files found.
+        """
 
-        Steps to follow:
-        1. Use the filesystem MCP tool to list files in /app/emanuel/docs/sources/{credit_number}/
-        2. Read and analyze all PDF documents found
-        3. Extract all relevant information for the loan agreement amendment
-        4. Analyze the template structure (if available)
-        5. Identify which fields need to be filled
-        6. Validate all extracted data
-        7. Return a complete LoanAgreement object with all required information
+        await self.agent.run(list_prompt)
 
-        If any critical information is missing, ask the user for clarification.
-        Pay special attention to:
-        - Credit user details (name, address, OIB)
-        - Credit numbers and amounts
-        - Dates and locations
+        # Step 2: Process documents one by one to avoid context overflow
+
+        # Process key documents first (usually the main agreement document)
+        key_documents_prompt = f"""
+        From the files in /app/emanuel/docs/sources/{credit_number}/, identify and read only the main loan agreement document.
+        Extract the following key information:
+        - Credit user name, address, and OIB
+        - Credit number and original amount
+        - Contract type and date
         - Whether this is an ex-NHB credit
         - Whether there was HRK to EUR conversion
+
+        Return the extracted information in a structured format.
+        """
+
+        key_data_result = await self.agent.run(key_documents_prompt)
+
+        # Step 3: Process additional documents for amendment-specific information
+        amendment_prompt = f"""
+        From the remaining files in /app/emanuel/docs/sources/{credit_number}/, extract amendment-specific information:
+        - Amendment number and date
+        - Amendment location
+        - Payment amounts and schedule changes
+        - Any solidary debtors or guarantors
+
+        Return the extracted information in a structured format.
+        """
+
+        amendment_data_result = await self.agent.run(amendment_prompt)
+
+        # Step 4: Combine and structure the data
+        combine_prompt = f"""
+        Combine the extracted information into a complete LoanAgreement object:
+
+        Key data: {key_data_result.output}
+        Amendment data: {amendment_data_result.output}
+
+        Create a complete LoanAgreement object with all required fields populated.
+        If any critical information is missing, indicate what is needed.
         """
 
         # Run agent with retry logic
@@ -242,8 +267,7 @@ class LoanAgreementProcessor:
 
         while retry_count < max_retries:
             try:
-                # The agent run should happen within the MCP context
-                result = await self.agent.run(prompt)
+                result = await self.agent.run(combine_prompt)
                 return result.output
 
             except ModelRetry as e:
@@ -251,7 +275,7 @@ class LoanAgreementProcessor:
                 # Ask user for missing information
                 missing_info = await self.get_missing_info_from_user(e.message)
                 if missing_info:
-                    prompt += f"\n\nAdditional information from user:\n{missing_info}"
+                    combine_prompt += f"\n\nAdditional information from user:\n{missing_info}"
                 else:
                     raise ValueError(f"Cannot proceed without required information: {e.message}")
 
@@ -278,74 +302,353 @@ class LoanAgreementProcessor:
         if loan_data.credit_user and len(loan_data.credit_user.oib) != 11:
             issues.append(f"Invalid OIB for credit user: {loan_data.credit_user.oib}")
 
-        # Check date formats
+        # Check date formats - accept both with and without trailing dot
+        date_valid = False
         try:
+            # Try format with trailing dot first
             datetime.strptime(loan_data.amendment_date, "%d.%m.%Y.")
+            date_valid = True
         except ValueError:
-            issues.append(f"Invalid date format: {loan_data.amendment_date}")
+            try:
+                # Try format without trailing dot
+                datetime.strptime(loan_data.amendment_date, "%d.%m.%Y")
+                date_valid = True
+            except ValueError:
+                pass
+
+        if not date_valid:
+            issues.append(f"Invalid date format: {loan_data.amendment_date} (expected DD.MM.YYYY or DD.MM.YYYY.)")
 
         return issues
 
     async def fill_template(self, loan_data: LoanAgreement) -> Path:
         """Fill the template with loan data using MCP Word server"""
 
+        # Ensure completed directory exists
+        completed_dir = self.base_path / "completed"
+        completed_dir.mkdir(exist_ok=True)
+
         # Prepare replacement mappings
         replacements = self.prepare_replacements(loan_data)
 
-        # Create prompt for filling the template
-        fill_prompt = f"""
-        Fill the loan agreement template with the following data:
+        # Define paths
+        template_path = "/app/emanuel/docs/template.docx"
+        output_path = f"/app/emanuel/docs/completed/{loan_data.credit_info.credit_number}.docx"
 
-        1. Use the Word MCP tool to copy /app/docs/template.docx to /app/docs/completed/{loan_data.credit_info.credit_number}.docx
-        2. Replace all placeholders in the document with the actual values:
-
-        {self.format_replacements_for_prompt(replacements)}
-
-        3. Handle conditional sections:
-           - If this is an ex-NHB credit, keep the merger introduction paragraph
-           - If this is not an ex-NHB credit, remove the merger paragraph
-           - If payment schedule changes, use the appropriate text variant
-
-        4. Save the completed document
-        5. Return the path to the completed document
+        # Step 1: Copy the template
+        copy_prompt = f"""
+        Use the copy_document tool to copy the template file from "{template_path}" to "{output_path}".
         """
 
-        await self.agent.run(fill_prompt)
+        await self.agent.run(copy_prompt)
 
-        output_path = self.base_path / "completed" / f"{loan_data.credit_info.credit_number}.docx"
-        return output_path
+        # Step 2: Replace placeholders one by one to avoid context overflow
+        replacement_prompts = []
+        for placeholder, value in replacements.items():
+            if value:  # Only replace if value is not empty
+                prompt = f"""
+                Use the search_and_replace tool on the document "{output_path}" to replace:
+                - Search for: "{placeholder}"
+                - Replace with: "{value}"
+                """
+                replacement_prompts.append(prompt)
+
+        # Execute replacements in batches to manage context
+        batch_size = 5
+        for i in range(0, len(replacement_prompts), batch_size):
+            batch = replacement_prompts[i:i+batch_size]
+            batch_prompt = "Execute the following replacements:\n\n" + "\n\n".join(batch)
+            await self.agent.run(batch_prompt)
+
+        # Step 3: Handle conditional content with sophisticated logic
+        await self.handle_conditional_paragraphs(loan_data, output_path)
+
+        # Return the path to the completed document
+        return Path(output_path)
+
+    async def handle_conditional_paragraphs(self, loan_data: LoanAgreement, output_path: str) -> None:
+        """Handle conditional paragraphs based on credit type and conditions"""
+
+        # Step 1: Handle ex-NHB merger introduction paragraph
+        await self.handle_nhb_merger_paragraph(loan_data, output_path)
+
+        # Step 2: Handle EUR conversion paragraphs in Article 1
+        await self.handle_eur_conversion_paragraphs(loan_data, output_path)
+
+        # Step 3: Handle payment schedule change paragraphs in Article 2
+        await self.handle_payment_schedule_paragraphs(loan_data, output_path)
+
+        # Step 4: Handle solidary debtor/guarantor sections
+        await self.handle_solidary_participants(loan_data, output_path)
+
+        # Step 5: Handle document copies count
+        await self.handle_document_copies(loan_data, output_path)
+
+    async def handle_nhb_merger_paragraph(self, loan_data: LoanAgreement, output_path: str) -> None:
+        """Handle the ex-NHB merger introduction paragraph in UVOD section
+
+        Based on template comment TN5:
+        - Show only for ex-NHB credits
+        - Remove entire UVOD section for HPB credits
+        """
+
+        if loan_data.credit_info.is_nhb_credit:
+            # Keep the UVOD section and merger paragraph for ex-NHB credits
+            conditional_prompt = f"""
+            In the document "{output_path}", ensure the UVOD section is present with the merger paragraph.
+
+            The UVOD section should contain the paragraph explaining that Nova hrvatska banka
+            (previously Sberbank d.d., previously VOLKSBANK d.d.) was merged with HPB based on
+            court decision Tt-23/25802-2 from July 3, 2023.
+
+            This section is required for ex-NHB credits to explain the legal basis for the amendment.
+            """
+        else:
+            # Remove the entire UVOD section for HPB credits
+            conditional_prompt = f"""
+            In the document "{output_path}", remove the entire UVOD section for HPB credits.
+
+            Remove:
+            - The "UVOD" heading
+            - The entire paragraph about Nova hrvatska banka merger
+            - Any references to "Pripojeno društvo" or court decisions
+
+            For HPB credits, the document should go directly from the parties section to "Članak 1."
+            """
+
+        await self.agent.run(conditional_prompt)
+
+    async def handle_eur_conversion_paragraphs(self, loan_data: LoanAgreement, output_path: str) -> None:
+        """Handle EUR conversion paragraphs in Article 1
+
+        Based on template comments TN9 and TN10:
+        - TN9: Article 1, point 2 - Show only for HPB credits initially approved in HRK
+        - TN10: Article 1, point 3 - Show only for ex-NHB credits, remove for HPB credits
+        """
+
+        # Article 1, point 2: EUR conversion paragraph (for HPB credits initially in HRK only)
+        if not loan_data.credit_info.is_nhb_credit and loan_data.credit_info.is_hrk_converted:
+            # Keep point 2 for HPB credits that were converted from HRK to EUR
+            eur_conversion_prompt = f"""
+            In the document "{output_path}", ensure Article 1, point 2 is present:
+            "Ugovorne strane ovog Dodatka br.__ suglasno utvrđuju da je nakon uvođenja EUR-a kao službene valute u Republici Hrvatskoj, Ugovoru dodijeljen novi broj kredita koji sada glasi {loan_data.credit_info.credit_number}."
+
+            This point is required for HPB credits that were initially approved in HRK and converted to EUR.
+            """
+            await self.agent.run(eur_conversion_prompt)
+        else:
+            # Remove point 2 for ex-NHB credits or HPB credits that weren't HRK-converted
+            remove_eur_prompt = f"""
+            In the document "{output_path}", remove Article 1, point 2 that mentions:
+            - "nakon uvođenja EUR-a kao službene valute"
+            - "dodijeljen novi broj kredita"
+
+            This point should be removed for ex-NHB credits (regardless of currency) or HPB credits not initially in HRK.
+            """
+            await self.agent.run(remove_eur_prompt)
+
+        # Article 1, point 3: Migration paragraph (for ex-NHB credits only)
+        if loan_data.credit_info.is_nhb_credit:
+            # Keep point 3 for ex-NHB credits
+            migration_prompt = f"""
+            In the document "{output_path}", ensure Article 1, point 3 is present:
+            "Nadalje, Ugovorne strane suglasno utvrđuju da je nakon pripajanja pravnog prednika Banke Banci, Ugovoru dodijeljen novi broj evidencije kredita koji sada glasi: {loan_data.credit_info.credit_number}"
+
+            This point explains the new credit number assigned after NHB migration to HPB.
+            """
+            await self.agent.run(migration_prompt)
+        else:
+            # Remove point 3 for HPB credits
+            remove_migration_prompt = f"""
+            In the document "{output_path}", remove Article 1, point 3 that mentions:
+            - "nakon pripajanja pravnog prednika Banke"
+            - "novi broj evidencije kredita"
+
+            This entire point should be completely removed for HPB credits.
+            """
+            await self.agent.run(remove_migration_prompt)
+
+    async def handle_payment_schedule_paragraphs(self, loan_data: LoanAgreement, output_path: str) -> None:
+        """Handle payment schedule change paragraphs in Article 2
+
+        Based on template comments TN11 and TN12:
+        - TN11: Show if payment schedule changes (includes due date change)
+        - TN12: Show if payment schedule doesn't change
+        """
+
+        if loan_data.change_payment_schedule:
+            # Keep the paragraph that mentions changing due date
+            schedule_change_prompt = f"""
+            In the document "{output_path}", ensure Article 2, point 2 includes the payment schedule change version:
+            "Mjesečni anuitet na preostali iznos nedospjele glavnice iznosi [XX.XXX,XX] EUR (slovima: [upisati slovima iznos]) te se mijenja datum dospijeća zadnjeg anuiteta sukladno planu otplate kredita."
+
+            Remove the alternative version that doesn't mention due date changes.
+            """
+        else:
+            # Keep the paragraph without due date change
+            no_schedule_change_prompt = f"""
+            In the document "{output_path}", ensure Article 2, point 2 includes the version without schedule change:
+            "Mjesečni anuitet na preostali iznos nedospjele glavnice iznosi [XX.XXX,XX] EUR (slovima: [upisati slovima iznos])."
+
+            Remove the alternative version that mentions changing due dates.
+            """
+            schedule_change_prompt = no_schedule_change_prompt
+
+        await self.agent.run(schedule_change_prompt)
+
+    async def handle_solidary_participants(self, loan_data: LoanAgreement, output_path: str) -> None:
+        """Handle solidary debtor and guarantor sections
+
+        Based on template comments TN1 and TN14:
+        - Remove sections for participants that don't exist
+        - Update signature section accordingly
+        """
+
+        # Handle solidary debtor section
+        if not loan_data.solidary_debtor:
+            remove_debtor_prompt = f"""
+            In the document "{output_path}", remove the solidary debtor sections:
+            - Remove the line "IME I PREZIME iz Adresa, OIB: ___________ (dalje: Solidarni dužnik)"
+            - Remove the "SOLIDARNI DUŽNIK" signature section at the end
+            """
+            await self.agent.run(remove_debtor_prompt)
+
+        # Handle solidary guarantors section
+        if not loan_data.solidary_guarantors:
+            remove_guarantors_prompt = f"""
+            In the document "{output_path}", remove the solidary guarantor sections:
+            - Remove lines mentioning "Solidarni jamac"
+            - Remove the "SOLIDARNI JAMAC" signature sections at the end
+            - Remove any legal entity representative sections if present
+            """
+            await self.agent.run(remove_guarantors_prompt)
+
+    async def handle_document_copies(self, loan_data: LoanAgreement, output_path: str) -> None:
+        """Handle document copies count in Article 4
+
+        Based on template comment TN13:
+        - Number of copies depends on total participants + 2 for Bank
+        """
+
+        # Calculate total participants
+        total_participants = 1  # Credit user
+        if loan_data.solidary_debtor:
+            total_participants += 1
+        if loan_data.solidary_guarantors:
+            total_participants += len(loan_data.solidary_guarantors)
+
+        total_copies = total_participants + 2  # +2 for Bank
+        bank_copies = 2
+        participant_copies = total_participants
+
+        # Convert numbers to Croatian words
+        total_copies_words = self.number_to_words(total_copies)
+        bank_copies_words = self.number_to_words(bank_copies)
+        participant_copies_words = self.number_to_words(participant_copies)
+
+        copies_prompt = f"""
+        In the document "{output_path}", update Article 4 with the correct number of copies:
+
+        Replace the copies information with:
+        "Ovaj Dodatak br.__ je sačinjen u {total_copies} (slovima: {total_copies_words}) istovjetna primjerka od kojih su {bank_copies} (slovima: {bank_copies_words}) primjerka za Banku, a po {participant_copies} (slovima: {participant_copies_words}) primjerak za Korisnika kredita"
+
+        Add participant list if there are additional participants beyond the credit user.
+        """
+
+        await self.agent.run(copies_prompt)
 
     def prepare_replacements(self, loan_data: LoanAgreement) -> Dict[str, str]:
         """Prepare replacement mappings for the template"""
+
+        # Basic replacements for main credit user
         replacements = {
-            "[IME I PREZIME]": loan_data.credit_user.name,
-            "[Adresa]": str(loan_data.credit_user.address),
-            "[___________]": loan_data.credit_user.oib,
+            # Credit user information
+            "IME I PREZIME": loan_data.credit_user.name,
+            "Adresa": str(loan_data.credit_user.address),
+            "___________": loan_data.credit_user.oib,
+
+            # Amendment information
             "[DD.MM.GGGG.]": loan_data.amendment_date,
             "[upisati datum slovima]": self.date_to_words(loan_data.amendment_date),
             "[upisati mjesto]": loan_data.amendment_location,
-            "[__]": str(loan_data.amendment_number),
+
+            # Credit information
             "[9910000000]": loan_data.credit_info.credit_number,
             "[upisati naziv ugovora – npr. o nenamjenskom kreditu]": loan_data.credit_info.contract_type,
-            "[XX.XXX,XX]": f"{loan_data.credit_info.original_amount:,.2f}",
+            "[upisati naziv ugovora - npr. o nenamjenskom kreditu]": loan_data.credit_info.contract_type,
             "[VALUTA]": loan_data.credit_info.original_currency,
-            "[upisati slovima iznos]": self.amount_to_words(loan_data.credit_info.original_amount),
+
+            # Amendment number - handle all variations
+            "[__]": str(loan_data.amendment_number),
+            "br.__": f"br.{loan_data.amendment_number}",
+            "br[2]. __": f"br.{loan_data.amendment_number}",
+            "Dodatka br.__": f"Dodatka br.{loan_data.amendment_number}",
         }
 
-        # Add EUR conversion if applicable
+        # Handle multiple amount placeholders with different contexts
+        original_amount_formatted = f"{loan_data.credit_info.original_amount:,.2f}".replace(",", ".")
+        original_amount_words = self.amount_to_words(loan_data.credit_info.original_amount)
+
+        # Add amount-related replacements
+        replacements.update({
+            "[XX.XXX,XX]": original_amount_formatted,
+            "[upisati slovima iznos]": original_amount_words,
+        })
+
+        # Add EUR conversion if applicable (for HRK to EUR converted credits)
         if loan_data.credit_info.is_hrk_converted:
             eur_amount = loan_data.credit_info.original_amount / 7.53450
+            eur_amount_formatted = f"{eur_amount:,.2f}".replace(",", ".")
+            eur_amount_words = self.amount_to_words(eur_amount)
+
             replacements.update({
-                "IZNOS_KREDITA": f"{eur_amount:,.2f}",
-                "IZNOS_SL": self.amount_to_words(eur_amount),
+                "=IZNOS_KREDITA": eur_amount_formatted,
+                "IZNOS_KREDITA": eur_amount_formatted,
+                "IZNOS_SL": eur_amount_words,
             })
 
-        # Add payment information if available
-        if loan_data.payment_amount:
-            replacements["[XX.XXX,XX]"] = f"{loan_data.payment_amount:,.2f}"
+        # Handle solidary debtor if present
+        if loan_data.solidary_debtor:
+            # For now, we'll handle this in the template by replacing the second occurrence
+            # This would need more sophisticated handling in a production system
+            pass
 
+        # Handle solidary guarantors if present
+        if loan_data.solidary_guarantors:
+            # Similar to solidary debtor, this needs more sophisticated handling
+            pass
+
+        # Add payment-specific information if available
+        if loan_data.payment_amount:
+            payment_formatted = f"{loan_data.payment_amount:,.2f}".replace(",", ".")
+            payment_words = self.amount_to_words(loan_data.payment_amount)
+
+            # These will replace specific instances in the payment context
+            replacements.update({
+                "[XX.XXX,XX]": payment_formatted,  # This will replace the first occurrence
+                "[upisati slovima iznos]": payment_words,
+            })
+
+        # Add current amount after payment if available
+        if loan_data.credit_info.current_amount:
+            current_amount_formatted = f"{loan_data.credit_info.current_amount:,.2f}".replace(",", ".")
+            current_amount_words = self.amount_to_words(loan_data.credit_info.current_amount)
+
+            # These would need to be handled contextually in the template
+            replacements.update({
+                "CURRENT_AMOUNT": current_amount_formatted,
+                "CURRENT_AMOUNT_WORDS": current_amount_words,
+            })
+
+        # Add new monthly payment if available
         if loan_data.new_monthly_payment:
-            replacements["[XX.XXX,XX]"] = f"{loan_data.new_monthly_payment:,.2f}"
+            monthly_payment_formatted = f"{loan_data.new_monthly_payment:,.2f}".replace(",", ".")
+            monthly_payment_words = self.amount_to_words(loan_data.new_monthly_payment)
+
+            replacements.update({
+                "NEW_MONTHLY_PAYMENT": monthly_payment_formatted,
+                "NEW_MONTHLY_PAYMENT_WORDS": monthly_payment_words,
+            })
 
         return replacements
 
@@ -449,16 +752,17 @@ class LoanAgreementProcessor:
                     if proceed.lower() != 'yes':
                         raise ValueError("User cancelled due to validation issues")
 
-                # 3. Fill template (simplified for now)
-                # output_path = await self.fill_template(loan_data)
-                # logger.info(f"✅ Document completed: {output_path}")
+                # 3. Fill template
+                output_path = await self.fill_template(loan_data)
+                logger.info(f"✅ Document completed: {output_path}")
 
-                print(f"\n✅ Success! Data extraction completed")
+                print(f"\n✅ Success! Loan agreement processing completed")
                 print(f"\nExtracted loan data summary:")
                 print(f"  - Credit User: {loan_data.credit_user.name}")
                 print(f"  - Credit Number: {loan_data.credit_info.credit_number}")
                 print(f"  - Amendment Number: {loan_data.amendment_number}")
                 print(f"  - Amendment Date: {loan_data.amendment_date}")
+                print(f"\n📄 Completed document saved to: {output_path}")
 
         except Exception as e:
             logger.error(f"Error processing credit {credit_number}: {e}")
