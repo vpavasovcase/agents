@@ -64,17 +64,16 @@ llm_model = GroqModel(
     provider=GroqProvider(api_key=os.getenv('GROQ_API_KEY'))
 )
 
-# Set up MCP servers
+# Set up MCP servers - using only filesystem server for now
 mcp_servers = [
     MCPServerStdio("npx", ["-y", "@modelcontextprotocol/server-filesystem", ROOT_DIR.as_posix()]),
-    MCPServerStdio('npx', ['-y', '@pydantic/mcp-run-python', 'stdio']),
 ]
 
 # Print MCP server configuration for debugging
 print(f"MCP Filesystem server path: {ROOT_DIR.as_posix()}")
 print(f"MCP servers configured: {len(mcp_servers)}")
 
-# Create the agent
+# Create the agent with MCP servers
 agent = Agent(
     model=llm_model,
     mcp_servers=mcp_servers,
@@ -146,41 +145,14 @@ async def process_receipt_image(image_path: str) -> ReceiptOCRResult:
         # Step 1: Perform OCR to extract text
         ocr_text = perform_ocr(image_path)
 
-        # Use the run_mcp_servers context manager to ensure MCP servers are running
-        async with agent.run_mcp_servers():
-            if not ocr_text.strip():
-                # If OCR failed to extract any text, fall back to using the LLM directly with the image
-                image_data = Path(image_path).read_bytes()
+        # MCP servers should be managed at a higher level, not per receipt
+        if not ocr_text.strip():
+            # If OCR failed to extract any text, fall back to using the LLM directly with the image
+            image_data = Path(image_path).read_bytes()
 
-                # Create a prompt for the OCR task
-                prompt = [
-                    """Extract all information from this receipt image. Include:
-                    1. Store name (required)
-                    2. Date of purchase (required, in format YYYY-MM-DD)
-                    3. Total amount (required, as a number without currency symbol)
-                    4. List of items with prices and quantities (if available)
-                    5. Payment method (if available)
-                    6. Tax amount (if available, as a number without currency symbol)
-
-                    Format your response as a structured list with clear labels, not as JSON.
-                    """,
-                    BinaryContent(data=image_data, media_type="image/jpeg")
-                ]
-
-                # Run the agent to extract data
-                result = await agent.run(prompt)
-                extracted_text = result.output
-            else:
-                # Use the OCR text
-                extracted_text = ocr_text
-
-                # Enhance OCR results with the LLM
-                prompt = f"""
-                I have performed OCR on a receipt image and got the following text:
-
-                {ocr_text}
-
-                Please extract the following information in a structured format:
+            # Create a prompt for the OCR task
+            prompt = [
+                """Extract all information from this receipt image. Include:
                 1. Store name (required)
                 2. Date of purchase (required, in format YYYY-MM-DD)
                 3. Total amount (required, as a number without currency symbol)
@@ -188,21 +160,47 @@ async def process_receipt_image(image_path: str) -> ReceiptOCRResult:
                 5. Payment method (if available)
                 6. Tax amount (if available, as a number without currency symbol)
 
-                If some information is unclear or missing but required, make reasonable assumptions based on the available text.
-                For example, if the store name is unclear, use the most prominent text at the top of the receipt.
-                If the date is unclear, use today's date.
-                If the total amount is unclear, sum up the prices of the items if possible.
-
                 Format your response as a structured list with clear labels, not as JSON.
-                """
+                """,
+                BinaryContent(data=image_data, media_type="image/jpeg")
+            ]
 
-                # Run the agent to extract structured data from OCR text
-                result = await agent.run(prompt)
-                extracted_text = result.output
+            # Run the agent to extract data
+            result = await agent.run(prompt)
+            extracted_text = result.output
+        else:
+            # Use the OCR text
+            extracted_text = ocr_text
 
-            # Parse the extracted data into a Receipt object
-            receipt_data = await agent.run(
-                f"""Convert the following receipt data into a structured JSON format that matches the Receipt model:
+            # Enhance OCR results with the LLM
+            prompt = f"""
+            I have performed OCR on a receipt image and got the following text:
+
+            {ocr_text}
+
+            Please extract the following information in a structured format:
+            1. Store name (required)
+            2. Date of purchase (required, in format YYYY-MM-DD)
+            3. Total amount (required, as a number without currency symbol)
+            4. List of items with prices and quantities (if available)
+            5. Payment method (if available)
+            6. Tax amount (if available, as a number without currency symbol)
+
+            If some information is unclear or missing but required, make reasonable assumptions based on the available text.
+            For example, if the store name is unclear, use the most prominent text at the top of the receipt.
+            If the date is unclear, use today's date.
+            If the total amount is unclear, sum up the prices of the items if possible.
+
+            Format your response as a structured list with clear labels, not as JSON.
+            """
+
+            # Run the agent to extract structured data from OCR text
+            result = await agent.run(prompt)
+            extracted_text = result.output
+
+        # Parse the extracted data into a Receipt object
+        receipt_data = await agent.run(
+            f"""Convert the following receipt data into a structured JSON format that matches the Receipt model:
 
 {extracted_text}
 
@@ -229,44 +227,44 @@ Example format:
 ```
 
 Return ONLY the JSON object, nothing else."""
-            )
+        )
 
-            # Extract JSON from the LLM response
-            json_str = extract_json_from_text(receipt_data.output)
+        # Extract JSON from the LLM response
+        json_str = extract_json_from_text(receipt_data.output)
 
-            if not json_str:
-                raise ValueError("Could not extract valid JSON from the LLM response")
+        if not json_str:
+            raise ValueError("Could not extract valid JSON from the LLM response")
 
-            # Parse the JSON data
-            try:
-                data = json.loads(json_str)
+        # Parse the JSON data
+        try:
+            data = json.loads(json_str)
 
-                # Convert string date to datetime
-                if isinstance(data.get('date'), str):
-                    data['date'] = datetime.fromisoformat(data['date'].replace('Z', '+00:00'))
+            # Convert string date to datetime
+            if isinstance(data.get('date'), str):
+                data['date'] = datetime.fromisoformat(data['date'].replace('Z', '+00:00'))
 
-                # Create ReceiptItem objects
-                if 'items' in data:
-                    items = []
-                    for item_data in data['items']:
-                        items.append(ReceiptItem(**item_data))
-                    data['items'] = items
+            # Create ReceiptItem objects
+            if 'items' in data:
+                items = []
+                for item_data in data['items']:
+                    items.append(ReceiptItem(**item_data))
+                data['items'] = items
 
-                # Create Receipt object
-                receipt_obj = Receipt(**data)
+            # Create Receipt object
+            receipt_obj = Receipt(**data)
 
-                # Add the image path
-                receipt_obj.image_path = image_path
+            # Add the image path
+            receipt_obj.image_path = image_path
 
-            except (json.JSONDecodeError, ValueError) as e:
-                raise ValueError(f"Failed to parse receipt data: {str(e)}")
+        except (json.JSONDecodeError, ValueError) as e:
+            raise ValueError(f"Failed to parse receipt data: {str(e)}")
 
-            return ReceiptOCRResult(
-                success=True,
-                receipt=receipt_obj,
-                confidence_score=0.9,  # This would be provided by a real OCR system
-                error_message=None
-            )
+        return ReceiptOCRResult(
+            success=True,
+            receipt=receipt_obj,
+            confidence_score=0.9,  # This would be provided by a real OCR system
+            error_message=None
+        )
 
     except Exception as e:
         logfire.error(f"Receipt processing failed: {str(e)}")
@@ -321,22 +319,25 @@ async def process_receipts_in_folder(folder_path: Optional[Union[str, Path]] = N
     print(f"Found {len(image_files)} receipt images to process")
 
     results = []
-    for image_file in image_files:
-        print(f"Processing {image_file}...")
-        result = await process_receipt_image(str(image_file))
 
-        if result.success and result.receipt:
-            # Save to database
-            receipt_id = await save_receipt(result.receipt)
-            print(f"✅ Saved receipt to database with ID {receipt_id}")
-            print(f"   Store: {result.receipt.store_name}")
-            print(f"   Date: {result.receipt.date}")
-            print(f"   Total: {result.receipt.total_amount}")
-            print(f"   Items: {len(result.receipt.items)}")
-        else:
-            print(f"❌ Failed to process receipt: {result.error_message}")
+    # Use MCP servers context manager for the entire batch
+    async with agent.run_mcp_servers():
+        for image_file in image_files:
+            print(f"Processing {image_file}...")
+            result = await process_receipt_image(str(image_file))
 
-        results.append(result)
+            if result.success and result.receipt:
+                # Save to database
+                receipt_id = await save_receipt(result.receipt)
+                print(f"✅ Saved receipt to database with ID {receipt_id}")
+                print(f"   Store: {result.receipt.store_name}")
+                print(f"   Date: {result.receipt.date}")
+                print(f"   Total: {result.receipt.total_amount}")
+                print(f"   Items: {len(result.receipt.items)}")
+            else:
+                print(f"❌ Failed to process receipt: {result.error_message}")
+
+            results.append(result)
 
     return results
 
@@ -390,22 +391,25 @@ async def process_new_receipts(folder_path: Optional[Union[str, Path]] = None) -
     print(f"Found {len(image_files)} new receipt images to process")
 
     results = []
-    for image_file in image_files:
-        print(f"Processing new receipt: {image_file}...")
-        result = await process_receipt_image(str(image_file))
 
-        if result.success and result.receipt:
-            # Save to database
-            receipt_id = await save_receipt(result.receipt)
-            print(f"✅ Saved receipt to database with ID {receipt_id}")
-            print(f"   Store: {result.receipt.store_name}")
-            print(f"   Date: {result.receipt.date}")
-            print(f"   Total: {result.receipt.total_amount}")
-            print(f"   Items: {len(result.receipt.items)}")
-        else:
-            print(f"❌ Failed to process receipt: {result.error_message}")
+    # Use MCP servers context manager for the entire batch
+    async with agent.run_mcp_servers():
+        for image_file in image_files:
+            print(f"Processing new receipt: {image_file}...")
+            result = await process_receipt_image(str(image_file))
 
-        results.append(result)
+            if result.success and result.receipt:
+                # Save to database
+                receipt_id = await save_receipt(result.receipt)
+                print(f"✅ Saved receipt to database with ID {receipt_id}")
+                print(f"   Store: {result.receipt.store_name}")
+                print(f"   Date: {result.receipt.date}")
+                print(f"   Total: {result.receipt.total_amount}")
+                print(f"   Items: {len(result.receipt.items)}")
+            else:
+                print(f"❌ Failed to process receipt: {result.error_message}")
+
+            results.append(result)
 
     return results
 
