@@ -19,6 +19,7 @@ from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.providers.groq import GroqProvider
 from pydantic_ai.mcp import MCPServerStdio
+from pydantic_ai.models.fallback import FallbackModel
 import logfire
 import pytesseract
 from pdf2image import convert_from_path
@@ -151,12 +152,12 @@ mcp_servers: List[MCPServerStdio] = [
     MCPServerStdio("uvx", ["--from", "office-word-mcp-server", "word_mcp_server"]),
 ]
 
-# model = GroqModel(
-#     'llama-3.2-90b-vision-preview',
-#     provider=GroqProvider(api_key=os.getenv('GROQ_API_KEY'))
-# )
+modelLlama = GroqModel(
+     'llama-3.2-90b-vision-preview',
+     provider=GroqProvider(api_key=os.getenv('GROQ_API_KEY'))
+)
 model = OpenAIModel('gpt-4.1-mini', provider=OpenAIProvider(api_key=os.getenv('OPENAI_API_KEY')))
-
+fallback_model = FallbackModel(modelLlama, model)
 # System prompt
 system_prompt = """You are an expert loan agreement processor for Croatian bank HPB (Hrvatska Poštanska Banka).
 Your task is to extract data from credit documents and fill out loan agreement amendments.
@@ -188,7 +189,7 @@ Important rules:
 
 # Create agent with MCP servers
 agent = Agent(
-    model=model,
+    model=fallback_model,
     system_prompt=system_prompt,
     tools=[
         Tool(process_pdf_with_ocr, description="Process PDF files and extract text via OCR if needed"),
