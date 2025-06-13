@@ -126,22 +126,11 @@ JsonListOrDict = Union[List[Any], Dict[str, Any]]
 # Main workflow
 # -------------------------------------------------
 async def main() -> None:
-    # MCP servers -----------------------------------------------------------
-    memory_server = MCPServerStdio("npx", ["-y", "@modelcontextprotocol/server-memory"])
-    firecrawl_server = MCPServerStdio(
-        "npx",
-        ["-y", "firecrawl-mcp"],
-        env={"FIRECRAWL_API_KEY": os.getenv("FIRECRAWL_API_KEY", "")},
-    )
-    gmail_server = MCPServerStdio("npx", ["-y", "@gongrzhe/server-gmail-autoauth-mcp"])
-
-    # LLM & agent -----------------------------------------------------------
+    # LLM model setup -----------------------------------------------------------
     llm_model = GroqModel(
         "meta-llama/llama-4-maverick-17b-128e-instruct",
         provider=GroqProvider(api_key=os.getenv("GROQ_API_KEY", "")),
     )
-
-    # We'll create a customized agent for each event session
 
     print("=== Sponsorship Email CLI Agent ===")
     print("Type 'exit' at any prompt to quit.\n")
@@ -177,248 +166,261 @@ async def main() -> None:
                 sponsor_types=event_info.sponsor_types or ""
             )
 
-            # Create a new agent with the customized system prompt
-            # We'll use this agent for this specific event session
-            event_agent = Agent(
-                model=llm_model,
-                system_prompt=custom_prompt,
-                mcp_servers=[memory_server, firecrawl_server, gmail_server],
-                tools=[duckduckgo_search_tool(max_results=MAX_SPONSORS)],
-                retries=3,
-            )
-
             print(f"\n✅ Agent customized for: {event_info.event_type} in {event_info.location.city}, {event_info.location.country}")
-            print(f"\n✅ System prompt: {custom_prompt}")
 
         except ValidationError as e:
             print("\n❌ Invalid input:", e, "\n")
             continue
 
-        # One MCP session per event ---------------------------------------
-        async with event_agent.run_mcp_servers():
+        # Create MCP servers and agent for this event session --------------
+        try:
+            # MCP servers for this session
+            memory_server = MCPServerStdio("npx", ["-y", "@modelcontextprotocol/server-memory"])
+            firecrawl_server = MCPServerStdio(
+                "npx",
+                ["-y", "firecrawl-mcp"],
+                env={"FIRECRAWL_API_KEY": os.getenv("FIRECRAWL_API_KEY", "")},
+            )
+            gmail_server = MCPServerStdio("npx", ["-y", "@gongrzhe/server-gmail-autoauth-mcp"])
 
-            # LLM crafts search query ----------------------------------
-            query_prompt = (
-                "Return ONLY a concise web‑search query that will list relevant sponsor websites."\
-                "\n\nEvent type: {event}\nCity: {city}\nCountry: {country}\nSponsor types: {types}".format(
-                    event=event_info.event_type,
-                    city=event_info.location.city,
-                    country=event_info.location.country,
-                    types=event_info.sponsor_types or "N/A",
+            # Create a list of servers to use
+            mcp_servers = [memory_server, firecrawl_server, gmail_server]
+
+            # Create a new agent with the customized system prompt
+            event_agent = Agent(
+                model=llm_model,
+                system_prompt=custom_prompt,
+                mcp_servers=mcp_servers,
+                tools=[duckduckgo_search_tool(max_results=MAX_SPONSORS)],
+                retries=3,
+            )
+
+            # One MCP session per event ---------------------------------------
+            async with event_agent.run_mcp_servers():
+
+                # LLM crafts search query ----------------------------------
+                query_prompt = (
+                    "Return ONLY a concise web‑search query that will list relevant sponsor websites."\
+                    "\n\nEvent type: {event}\nCity: {city}\nCountry: {country}\nSponsor types: {types}".format(
+                        event=event_info.event_type,
+                        city=event_info.location.city,
+                        country=event_info.location.country,
+                        types=event_info.sponsor_types or "N/A",
+                    )
                 )
-            )
-            resp = await event_agent.run(query_prompt)
-            search_query = resp.output.strip() if isinstance(resp.output, str) and resp.output.strip() else " ".join(
-                [event_info.sponsor_types or event_info.event_type, event_info.location.city, event_info.location.country]
-            )
-            logfire.info(f"Search query: {search_query}")
+                resp = await event_agent.run(query_prompt)
+                search_query = resp.output.strip() if isinstance(resp.output, str) and resp.output.strip() else " ".join(
+                    [event_info.sponsor_types or event_info.event_type, event_info.location.city, event_info.location.country]
+                )
+                logfire.info(f"Search query: {search_query}")
 
-            # DuckDuckGo search ----------------------------------------
-            # Use the duckduckgo_search_tool through the agent
-            search_prompt = (
-                f"INSTRUCTIONS: Make EXACTLY ONE search using the duckduckgo_search tool. No more, no less.\n\n"
-                f"Search query to use: '{search_query}'\n\n"
-                f"Context: Looking for potential sponsors for {event_info.event_type} in {event_info.location.city}, {event_info.location.country}. "
-                f"Focus on {event_info.sponsor_types or 'local businesses'}.\n\n"
-                f"Return format: A list of up to {MAX_SPONSORS} URLs to company websites. Format your response as a numbered list with ONLY the URLs, one per line, like this:\n"
-                f"1. https://example1.com\n"
-                f"2. https://example2.com\n"
-                f"3. https://example3.com\n\n"
-                f"CRITICAL: Make only ONE call to the duckduckgo_search tool. Do not make multiple search calls."
-            )
-            search_response = await event_agent.run(search_prompt)
-            logfire.info("Received search response from agent")
+                # DuckDuckGo search ----------------------------------------
+                # Use the duckduckgo_search_tool through the agent
+                search_prompt = (
+                    f"INSTRUCTIONS: Make EXACTLY ONE search using the duckduckgo_search tool. No more, no less.\n\n"
+                    f"Search query to use: '{search_query}'\n\n"
+                    f"Context: Looking for potential sponsors for {event_info.event_type} in {event_info.location.city}, {event_info.location.country}. "
+                    f"Focus on {event_info.sponsor_types or 'local businesses'}.\n\n"
+                    f"Return format: A list of up to {MAX_SPONSORS} URLs to company websites. Format your response as a numbered list with ONLY the URLs, one per line, like this:\n"
+                    f"1. https://example1.com\n"
+                    f"2. https://example2.com\n"
+                    f"3. https://example3.com\n\n"
+                    f"CRITICAL: Make only ONE call to the duckduckgo_search tool. Do not make multiple search calls."
+                )
+                search_response = await event_agent.run(search_prompt)
+                logfire.info("Received search response from agent")
 
-            # Extract URLs from the search response
-            search_output = search_response.output
-            print("Search output:", search_output)
-            logfire.info(f"Search response type: {type(search_output)}")
-            logfire.debug(f"Search response: {search_response.output}")
+                # Extract URLs from the search response
+                search_output = search_response.output
+                print("Search output:", search_output)
+                logfire.info(f"Search response type: {type(search_output)}")
+                logfire.debug(f"Search response: {search_response.output}")
 
+                # Parse URLs from the search response string
+                urls = []
 
-            # Parse URLs from the search response string
-            urls = []
+                if isinstance(search_output, str):
+                    # Look for URLs in the text using a more robust pattern matching approach
+                    import re
+                    # This pattern matches URLs more accurately, including those in numbered lists
+                    url_pattern = r'(?:https?://(?:www\.)?|www\.)[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?:/[^\s\)\]\"\']*)*'
+                    urls = re.findall(url_pattern, search_output)
 
-            if isinstance(search_output, str):
-                # Look for URLs in the text using a more robust pattern matching approach
-                import re
-                # This pattern matches URLs more accurately, including those in numbered lists
-                url_pattern = r'(?:https?://(?:www\.)?|www\.)[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?:/[^\s\)\]\"\']*)*'
-                urls = re.findall(url_pattern, search_output)
+                    # Clean up URLs to ensure they have proper http/https prefix
+                    cleaned_urls = []
+                    for url in urls:
+                        if not url.startswith(('http://', 'https://')):
+                            url = 'https://' + url
+                        cleaned_urls.append(url)
+                    urls = cleaned_urls
+                elif isinstance(search_output, list):
+                    # If by chance it's already a list, use it directly
+                    urls = search_output
 
-                # Clean up URLs to ensure they have proper http/https prefix
-                cleaned_urls = []
+                # Remove duplicate URLs while preserving order
+                unique_urls = []
+                seen = set()
                 for url in urls:
-                    if not url.startswith(('http://', 'https://')):
-                        url = 'https://' + url
-                    cleaned_urls.append(url)
-                urls = cleaned_urls
-            elif isinstance(search_output, list):
-                # If by chance it's already a list, use it directly
-                urls = search_output
+                    if url not in seen:
+                        seen.add(url)
+                        unique_urls.append(url)
+                urls = unique_urls
 
-            # Remove duplicate URLs while preserving order
-            unique_urls = []
-            seen = set()
-            for url in urls:
-                if url not in seen:
-                    seen.add(url)
-                    unique_urls.append(url)
-            urls = unique_urls
+                logfire.debug(f"URLs: {urls}")
 
+                if not urls:
+                    print("\n⚠️  No URLs found. Try again.\n")
+                    continue
 
-            logfire.debug(f"URLs: {urls}")
+                # Print the extracted URLs for debugging
+                print("\nExtracted URLs:")
+                for i, url in enumerate(urls[:MAX_SPONSORS], 1):
+                    print(f"{i}. {url}")
+                print()
 
-            if not urls:
-                print("\n⚠️  No URLs found. Try again.\n")
-                continue
+                logfire.info(f"Collected {len(urls)} unique URLs")
 
-            # Print the extracted URLs for debugging
-            print("\nExtracted URLs:")
-            for i, url in enumerate(urls[:MAX_SPONSORS], 1):
-                print(f"{i}. {url}")
-            print()
+                # Extract contacts using Firecrawl ------------------------------
+                logfire.info("Extracting contact information from websites using Firecrawl")
 
-            logfire.info(f"Collected {len(urls)} unique URLs")
+                # Process URLs one at a time
+                contacts = []
 
-            # Extract contacts using Firecrawl ------------------------------
-            logfire.info("Extracting contact information from websites using Firecrawl")
+                for url in urls[:MAX_SPONSORS]:
+                    try:
+                        # Use event_agent.run directly with a prompt that instructs the agent to use the firecrawl_extract tool
+                        extract_prompt = f"""
+                        Use the firecrawl crawl tool to analyze this website: {url}, and find the company name, contact email, and contact person (if available).
+                        Return the extracted information in JSON format with these fields:
+                        - "name": The company name
+                        - "email" or "contact_email": The contact email address
+                        - "contact_person": The name of the contact person (if available)
 
-            # Process URLs one at a time
-            contacts = []
+                        It's important to include at least one of: company name, email address, or contact person.
+                        Do not draft any emails yet.
+                        """
 
-            for url in urls[:MAX_SPONSORS]:
+                        extract_response = await event_agent.run(extract_prompt)
+                        extract_raw = extract_response.output
 
-                try:
-                    # Use event_agent.run directly with a prompt that instructs the agent to use the firecrawl_extract tool
-                    extract_prompt = f"""
-                    Use the firecrawl crawl tool to analyze this website: {url}, and find the company name, contact email, and contact person (if available).
-                    Return the extracted information in JSON format with these fields:
-                    - "name": The company name
-                    - "email" or "contact_email": The contact email address
-                    - "contact_person": The name of the contact person (if available)
+                        logfire.info(f"Extraction result for url {url}: {extract_raw}")
 
-                    It's important to include at least one of: company name, email address, or contact person.
-                    Do not draft any emails yet.
+                        # Process the extraction results for this batch
+                        # It will likely be a string that we need to parse for JSON content
+
+                        # Try to extract JSON from the response
+                        if isinstance(extract_raw, str):
+                            # Look for JSON objects in the string
+                            try:
+                                # Try to parse the entire string as JSON
+                                parsed = json.loads(extract_raw)
+                                if isinstance(parsed, list):
+                                    # Accept contacts with either name, email, or contact_email
+                                    batch_contacts = [c for c in parsed if isinstance(c, dict) and
+                                                     ("name" in c or "email" in c or "contact_email" in c)]
+                                    contacts.extend(batch_contacts)
+                                elif isinstance(parsed, dict) and ("name" in parsed or "email" in parsed or "contact_email" in parsed):
+                                    contacts.append(parsed)
+                                elif isinstance(parsed, dict):
+                                    # Check if there's a nested structure
+                                    for _, value in parsed.items():
+                                        if isinstance(value, dict) and ("name" in value or "email" in value or "contact_email" in value):
+                                            contacts.append(value)
+                            except json.JSONDecodeError:
+                                # Try to find JSON objects in the text
+                                import re
+                                json_pattern = r'\{[^{}]*\}'
+                                json_matches = re.findall(json_pattern, extract_raw)
+
+                                for json_str in json_matches:
+                                    try:
+                                        parsed = json.loads(json_str)
+                                        if isinstance(parsed, dict) and ("name" in parsed or "email" in parsed or "contact_email" in parsed):
+                                            contacts.append(parsed)
+                                    except json.JSONDecodeError:
+                                        continue
+
+                        # Handle list or dict responses (less likely with direct agent.run)
+                        elif isinstance(extract_raw, list):
+                            # Cast to Any to avoid type checking issues
+                            from typing import Any
+                            extract_list = cast(List[Any], extract_raw)
+                            batch_contacts = [c for c in extract_list if isinstance(c, dict) and
+                                             ("name" in c or "email" in c or "contact_email" in c)]
+                            contacts.extend(batch_contacts)
+                        elif isinstance(extract_raw, dict) and ("name" in cast(Dict[str, Any], extract_raw) or
+                                                               "email" in cast(Dict[str, Any], extract_raw) or
+                                                               "contact_email" in cast(Dict[str, Any], extract_raw)):
+                            contacts.append(cast(Dict[str, Any], extract_raw))
+                    except Exception as e:
+                        logfire.error(f"Error extracting contact information from url {url}: {str(e)}")
+
+                    # Add a delay of 5 seconds after each loop iteration
+                    await asyncio.sleep(5)
+
+                # Check if we found any valid contacts
+                if not contacts:
+                    print("\n⚠️  No contacts found.\n")
+                    continue
+
+                # Draft + save Gmail emails ------------------------------
+                for c in contacts:
+                    print(f"Drafting email for {c}")
+                    # Try to get email from either "email" or "contact_email" field
+                    email = cast(str, c.get("email", c.get("contact_email", "")))
+                    if not email:
+                        print(f"⚠️  No email found for contact: {c}")
+                        continue
+                    name = cast(str, c.get("name", "Valued Sponsor"))
+                    person = cast(str, c.get("contact_person", "Sir/Madam"))
+
+                    subject = f"Sponsorship Invitation: {event_info.event_type} in {event_info.location.city}"
+                    email_prompt = (
+                        f"Compose a polite sponsorship request email to {name} addressed to {person}. "
+                        f"The event is a {event_info.event_type} in {event_info.location.city}, {event_info.location.country}. "
+                        "Mention their business and request their sponsorship support. Respond ONLY as JSON with keys: to, subject, body. "
+                        f"The 'to' field must be ['{email}']."
+                    )
+                    resp = await event_agent.run(email_prompt, output_type=EmailDraft)
+                    draft: EmailDraft
+                    if isinstance(resp.output, dict):
+                        draft = EmailDraft(**resp.output)
+                    else:
+                        draft = EmailDraft(to=[email], subject=subject, body=str(resp.output))
+
+                    # Use event_agent.run directly with a prompt that instructs the agent to use the draft_email tool
+                    draft_email_prompt = f"""
+                    Use the draft_email tool to create a draft email with the following details:
+
+                    The recipient email is {draft.to[0]}, the subject is '{draft.subject}', and the body is:
+
+                    {draft.body}
+
+                    Just create the draft, no need to send it.
                     """
 
-                    extract_response = await event_agent.run(extract_prompt)
-                    extract_raw = extract_response.output
+                    print(f"\n--- DRAFT EMAIL PROMPT ---\n{draft_email_prompt}\n--- END PROMPT ---\n")
 
-                    logfire.info(f"Extraction result for url {url}: {extract_raw}")
+                    try:
+                        draft_response = await event_agent.run(draft_email_prompt)
+                        print(f"\n--- DRAFT RESPONSE ---\n{draft_response.output}\n--- END RESPONSE ---\n")
+                        logfire.info(f"Draft response: {draft_response.output}")
 
-                    # Process the extraction results for this batch
-                    # It will likely be a string that we need to parse for JSON content
+                        # Add a clear success message regardless of the agent's response
+                        print(f"\n✅ Draft email successfully created for {email}")
+                        print("Check your Gmail drafts folder to see the created draft.")
+                    except Exception as e:
+                        print(f"\n❌ Error creating draft email: {str(e)}")
+                        logfire.error(f"Error creating draft email: {str(e)}")
 
-                    # Try to extract JSON from the response
-                    if isinstance(extract_raw, str):
-                        # Look for JSON objects in the string
-                        try:
-                            # Try to parse the entire string as JSON
-                            parsed = json.loads(extract_raw)
-                            if isinstance(parsed, list):
-                                # Accept contacts with either name, email, or contact_email
-                                batch_contacts = [c for c in parsed if isinstance(c, dict) and
-                                                 ("name" in c or "email" in c or "contact_email" in c)]
-                                contacts.extend(batch_contacts)
-                            elif isinstance(parsed, dict) and ("name" in parsed or "email" in parsed or "contact_email" in parsed):
-                                contacts.append(parsed)
-                            elif isinstance(parsed, dict):
-                                # Check if there's a nested structure
-                                for key, value in parsed.items():
-                                    if isinstance(value, dict) and ("name" in value or "email" in value or "contact_email" in value):
-                                        contacts.append(value)
-                        except json.JSONDecodeError:
-                            # Try to find JSON objects in the text
-                            import re
-                            json_pattern = r'\{[^{}]*\}'
-                            json_matches = re.findall(json_pattern, extract_raw)
+                    logfire.info(f"Draft saved for {email}")
 
-                            for json_str in json_matches:
-                                try:
-                                    parsed = json.loads(json_str)
-                                    if isinstance(parsed, dict) and ("name" in parsed or "email" in parsed or "contact_email" in parsed):
-                                        contacts.append(parsed)
-                                except json.JSONDecodeError:
-                                    continue
+                print("\n✅ Draft emails created and saved. Ready for next event.\n")
 
-                    # Handle list or dict responses (less likely with direct agent.run)
-                    elif isinstance(extract_raw, list):
-                        # Cast to Any to avoid type checking issues
-                        from typing import Any
-                        extract_list = cast(List[Any], extract_raw)
-                        batch_contacts = [c for c in extract_list if isinstance(c, dict) and
-                                         ("name" in c or "email" in c or "contact_email" in c)]
-                        contacts.extend(batch_contacts)
-                    elif isinstance(extract_raw, dict) and ("name" in cast(Dict[str, Any], extract_raw) or
-                                                           "email" in cast(Dict[str, Any], extract_raw) or
-                                                           "contact_email" in cast(Dict[str, Any], extract_raw)):
-                        contacts.append(cast(Dict[str, Any], extract_raw))
-                except Exception as e:
-                    logfire.error(f"Error extracting contact information from url {url}: {str(e)}")
-
-                # Add a delay of 5 seconds after each loop iteration
-                await asyncio.sleep(5)
-
-            # Check if we found any valid contacts
-
-            if not contacts:
-                print("\n⚠️  No contacts found.\n")
-                continue
-
-            # Draft + save Gmail emails ------------------------------
-            for c in contacts:
-                print(f"Drafting email for {c}")
-                # Try to get email from either "email" or "contact_email" field
-                email = cast(str, c.get("email", c.get("contact_email", "")))
-                if not email:
-                    print(f"⚠️  No email found for contact: {c}")
-                    continue
-                name = cast(str, c.get("name", "Valued Sponsor"))
-                person = cast(str, c.get("contact_person", "Sir/Madam"))
-
-                subject = f"Sponsorship Invitation: {event_info.event_type} in {event_info.location.city}"
-                email_prompt = (
-                    f"Compose a polite sponsorship request email to {name} addressed to {person}. "
-                    f"The event is a {event_info.event_type} in {event_info.location.city}, {event_info.location.country}. "
-                    "Mention their business and request their sponsorship support. Respond ONLY as JSON with keys: to, subject, body. "
-                    f"The 'to' field must be ['{email}']."
-                )
-                resp = await event_agent.run(email_prompt, output_type=EmailDraft)
-                draft: EmailDraft
-                if isinstance(resp.output, dict):
-                    draft = EmailDraft(**resp.output)
-                else:
-                    draft = EmailDraft(to=[email], subject=subject, body=str(resp.output))
-
-                # Use event_agent.run directly with a prompt that instructs the agent to use the draft_email tool
-                draft_email_prompt = f"""
-                Use the draft_email tool to create a draft email with the following details:
-
-                The recipient email is {draft.to[0]}, the subject is '{draft.subject}', and the body is:
-
-                {draft.body}
-
-                Just create the draft, no need to send it.
-                """
-
-                print(f"\n--- DRAFT EMAIL PROMPT ---\n{draft_email_prompt}\n--- END PROMPT ---\n")
-
-                try:
-                    draft_response = await event_agent.run(draft_email_prompt)
-                    print(f"\n--- DRAFT RESPONSE ---\n{draft_response.output}\n--- END RESPONSE ---\n")
-                    logfire.info(f"Draft response: {draft_response.output}")
-
-                    # Add a clear success message regardless of the agent's response
-                    print(f"\n✅ Draft email successfully created for {email}")
-                    print("Check your Gmail drafts folder to see the created draft.")
-                except Exception as e:
-                    print(f"\n❌ Error creating draft email: {str(e)}")
-                    logfire.error(f"Error creating draft email: {str(e)}")
-
-                logfire.info(f"Draft saved for {email}")
-
-            print("\n✅ Draft emails created and saved. Ready for next event.\n")
+        except Exception as e:
+            print(f"\n❌ Error during event processing: {str(e)}")
+            logfire.error(f"Error during event processing: {str(e)}")
+            print("Please try again with a different event.\n")
 
     print("Goodbye! 👋")
 
