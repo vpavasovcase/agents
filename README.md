@@ -22,7 +22,11 @@ The workshop was structured as a comprehensive introduction to AI agent developm
 ├── exercises/           # Workshop exercises
 ├── snippets/            # Code snippets and utilities
 ├── mcp/                 # MCP server configurations
-└── [student-folders]/   # Individual student projects
+├── receipt-processor/   # Receipt processing agent (Noa's project)
+├── document-filler/     # Document template population agent (Emanuel's project)
+├── sponsor-finder/      # Sponsor finder agent (Martin's project)
+├── social-promoter/     # Social media promotion agent (Marko's project)
+└── sponsor-discovery/   # Enhanced sponsor discovery agent (Martin's advanced project)
 ```
 
 ## Lecture Topics Covered
@@ -49,41 +53,46 @@ The workshop was structured as a comprehensive introduction to AI agent developm
 
 Five students each developed unique AI agents addressing real-world automation challenges:
 
-### 1. **Noa** - Receipt Processing Agent
+### 1. **Receipt Processor** (`receipt-processor/`)
 **Project**: Automated receipt data extraction and spending analysis
 - Processes receipt images using OCR and LLM vision capabilities
 - Extracts structured data (store, date, items, amounts)
 - Stores data in PostgreSQL database
 - Provides natural language spending analysis
 - **Tech Stack**: Docker, PostgreSQL, Tesseract OCR, Groq API
+- **Developer**: Noa
 
-### 2. **Emanuel** - Document Data Population Agent
+### 2. **Document Filler** (`document-filler/`)
 **Project**: Automated document template filling from multiple sources
 - Analyzes Word document templates to identify required fields
 - Extracts data from multiple source documents (PDF, Excel, Word)
 - Populates templates with extracted data
 - **Focus**: Banking document automation
 - **Tech Stack**: Custom MCP server for Office documents, OCR processing
+- **Developer**: Emanuel
 
-### 3. **Martin** - Sponsor Finder Agent
+### 3. **Sponsor Finder** (`sponsor-finder/`)
 **Project**: Automated sponsor outreach and management
 - Searches web for potential sponsors based on criteria
 - Generates personalized sponsorship inquiry emails
 - Manages sponsor database and tracks responses
 - **Tech Stack**: Gmail API, SQLite database, web scraping
+- **Developer**: Martin
 
-### 4. **Marko** - Social Media Promotion Agent
+### 4. **Social Promoter** (`social-promoter/`)
 **Project**: Automated social media campaign management
 - Creates promotional content for products/services
 - Schedules and publishes posts across platforms
 - **Focus**: Consistent brand messaging and engagement
+- **Developer**: Marko
 
-### 5. **Sponsor-Martin** - Enhanced Sponsor Discovery
+### 5. **Sponsor Discovery** (`sponsor-discovery/`)
 **Project**: Advanced sponsor finding with crawling capabilities
 - Web crawling for sponsor discovery
 - Memory system for tracking interactions
 - Multi-agent architecture for search and outreach
 - **Tech Stack**: Advanced web scraping, persistent memory
+- **Developer**: Martin (advanced project)
 
 ## Key Technologies
 

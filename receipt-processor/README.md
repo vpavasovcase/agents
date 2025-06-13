@@ -1,4 +1,4 @@
-# Noa - Receipt Processing Agent
+# Receipt Processing Agent
 
 A complete, working receipt processing agent that:
 1. Reads receipt images from a folder
@@ -27,22 +27,22 @@ DATABASE_NAME=postgres
 ## Usage
 
 ### Processing Receipts
-1. Copy receipt images to the `noa/receipts` folder
+1. Copy receipt images to the `receipt-processor/receipts` folder
 2. Process all receipts:
    ```bash
-   docker-compose exec app python -m noa.app process-all
+   docker-compose exec app python -m receipt_processor.app process-all
    ```
 3. Process only new receipts (added today):
    ```bash
-   docker-compose exec app python -m noa.app process-new
+   docker-compose exec app python -m receipt_processor.app process-new
    ```
 
 ### Analyzing Spending
 Run spending analysis with natural language queries:
 ```bash
-python -m noa.app analyze "how much did I spend last month"
-python -m noa.app analyze "what's my spending by category"
-python -m noa.app analyze "how much did I spend at Walmart"
+python -m receipt_processor.app analyze "how much did I spend last month"
+python -m receipt_processor.app analyze "what's my spending by category"
+python -m receipt_processor.app analyze "how much did I spend at Walmart"
 ```
 
 ## Features
