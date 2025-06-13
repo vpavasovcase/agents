@@ -22,11 +22,15 @@ The workshop was structured as a comprehensive introduction to AI agent developm
 ├── exercises/           # Workshop exercises
 ├── snippets/            # Code snippets and utilities
 ├── mcp/                 # MCP server configurations
-├── receipt-processor/   # Receipt processing agent (Noa's project)
-├── document-filler/     # Document template population agent (Emanuel's project)
-├── sponsor-finder/      # Sponsor finder agent (Martin's project)
-├── social-promoter/     # Social media promotion agent (Marko's project)
-└── sponsor-discovery/   # Enhanced sponsor discovery agent (Martin's advanced project)
+├── scripts/             # Utility scripts for setup and deployment
+├── student_projects/    # Student project implementations
+│   ├── best-buy/        # Best deal finder agent
+│   ├── document-filler/ # Document template population agent (Emanuel's project)
+│   ├── receipt-processor/ # Receipt processing agent (Noa's project)
+│   └── sponsor-finder/  # Sponsor finder agent (Martin's project)
+├── Dockerfile           # Container configuration
+├── docker-compose.yml   # Multi-service container orchestration
+└── requirements.txt     # Python dependencies
 ```
 
 ## Lecture Topics Covered
@@ -51,9 +55,9 @@ The workshop was structured as a comprehensive introduction to AI agent developm
 
 ## Student Projects
 
-Five students each developed unique AI agents addressing real-world automation challenges:
+Students developed unique AI agents addressing real-world automation challenges:
 
-### 1. **Receipt Processor** (`receipt-processor/`)
+### 1. **Receipt Processor** (`student_projects/receipt-processor/`)
 **Project**: Automated receipt data extraction and spending analysis
 - Processes receipt images using OCR and LLM vision capabilities
 - Extracts structured data (store, date, items, amounts)
@@ -62,7 +66,7 @@ Five students each developed unique AI agents addressing real-world automation c
 - **Tech Stack**: Docker, PostgreSQL, Tesseract OCR, Groq API
 - **Developer**: Noa
 
-### 2. **Document Filler** (`document-filler/`)
+### 2. **Document Filler** (`student_projects/document-filler/`)
 **Project**: Automated document template filling from multiple sources
 - Analyzes Word document templates to identify required fields
 - Extracts data from multiple source documents (PDF, Excel, Word)
@@ -71,7 +75,7 @@ Five students each developed unique AI agents addressing real-world automation c
 - **Tech Stack**: Custom MCP server for Office documents, OCR processing
 - **Developer**: Emanuel
 
-### 3. **Sponsor Finder** (`sponsor-finder/`)
+### 3. **Sponsor Finder** (`student_projects/sponsor-finder/`)
 **Project**: Automated sponsor outreach and management
 - Searches web for potential sponsors based on criteria
 - Generates personalized sponsorship inquiry emails
@@ -79,20 +83,12 @@ Five students each developed unique AI agents addressing real-world automation c
 - **Tech Stack**: Gmail API, SQLite database, web scraping
 - **Developer**: Martin
 
-### 4. **Social Promoter** (`social-promoter/`)
-**Project**: Automated social media campaign management
-- Creates promotional content for products/services
-- Schedules and publishes posts across platforms
-- **Focus**: Consistent brand messaging and engagement
-- **Developer**: Marko
-
-### 5. **Sponsor Discovery** (`sponsor-discovery/`)
-**Project**: Advanced sponsor finding with crawling capabilities
-- Web crawling for sponsor discovery
-- Memory system for tracking interactions
-- Multi-agent architecture for search and outreach
-- **Tech Stack**: Advanced web scraping, persistent memory
-- **Developer**: Martin (advanced project)
+### 4. **Best Buy Agent** (`student_projects/best-buy/`)
+**Project**: Best deal finder and price comparison
+- Searches for products across multiple platforms
+- Compares prices and finds best deals
+- **Focus**: Automated deal discovery and comparison
+- **Tech Stack**: Web scraping, price comparison algorithms
 
 ## Key Technologies
 
@@ -117,21 +113,30 @@ Five students each developed unique AI agents addressing real-world automation c
    cd agents
    ```
 
-2. Create a virtual environment:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. Set up environment variables:
+2. Set up environment variables:
    ```bash
    cp .env.example .env
    # Edit .env with your API keys
+   ```
+
+3. Run the project using Docker (requirements are installed automatically):
+   ```bash
+   docker-compose up --build
+   ```
+
+   Or use the provided utility scripts:
+   ```bash
+   # Use setup scripts for easy deployment
+   ./scripts/start.sh        # Start the application
+   ./scripts/install-dependencies.sh  # Install dependencies
+   ./scripts/db.sh          # Database operations
+   ```
+
+   Or run individual projects in containers:
+   ```bash
+   # Navigate to specific project directory
+   cd student_projects/receipt-processor/  # or any other project
+   docker-compose up --build
    ```
 
 ### Running Examples

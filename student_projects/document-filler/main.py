@@ -1,5 +1,5 @@
 """
-Details about what we are building are in emanuel/sys_prompt.md
+Details about what we are building are in document-filler/sys_prompt.md
 Loan Agreement Document Processor
 Test credit number: 9919479387
 Automates filling loan agreement templates by extracting data from credit documents

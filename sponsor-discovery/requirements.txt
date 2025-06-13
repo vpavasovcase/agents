@@ -1,6 +1,0 @@
-pydantic
-pydantic-ai
-logfire
-aiohttp
-async-timeout
-nest-asyncio

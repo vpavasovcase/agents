@@ -11,15 +11,15 @@ from pydantic_ai.providers.groq import GroqProvider
 from pydantic_ai.common_tools.duckduckgo import duckduckgo_search_tool
 import json
 
-"""Sponsor‑finding & email‑drafting CLI agent
+"""Sponsor-finding & email-drafting CLI agent
 
 Runs a loop that asks for event details, searches the web for a configurable number
 of potential sponsors, extracts contact data, and drafts Gmail emails asking for
 sponsorship. Uses DuckDuckGo search tool for finding potential sponsors,
 Firecrawl for extracting contact information from websites, and Gmail MCP server
-for email drafting, all powered by a Groq LLaMA‑4 model.
+for email drafting, all powered by a Groq LLaMA-4 model.
 
-Safe‑typed throughout so static analysers (e.g. Pylance) do *not* warn about
+Safe-typed throughout so static analysers (e.g. Pylance) do *not* warn about
 str.get() errors.
 """
 
@@ -219,7 +219,7 @@ async def main() -> None:
 
                 # LLM crafts search query ----------------------------------
                 query_prompt = (
-                    "Return ONLY a concise web‑search query that will list relevant sponsor websites."\
+                    "Return ONLY a concise web-search query that will list relevant sponsor websites."\
                     "\n\nEvent type: {event}\nCity: {city}\nCountry: {country}\nSponsor types: {types}".format(
                         event=event_info.event_type,
                         city=event_info.location.city,
