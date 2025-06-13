@@ -122,6 +122,25 @@ class EmailDraft(BaseModel):
 # Helper alias
 JsonListOrDict = Union[List[Any], Dict[str, Any]]
 
+# Helper functions
+def sanitize_for_json(text: str) -> str:
+    """Sanitize text for safe JSON inclusion"""
+    if not text:
+        return ""
+
+    # Replace problematic characters
+    sanitized = text.replace('\\', '\\\\')  # Escape backslashes first
+    sanitized = sanitized.replace('"', '\\"')  # Escape quotes
+    sanitized = sanitized.replace('\n', '\\n')  # Escape newlines
+    sanitized = sanitized.replace('\r', '\\r')  # Escape carriage returns
+    sanitized = sanitized.replace('\t', '\\t')  # Escape tabs
+
+    # Limit length to prevent token issues
+    if len(sanitized) > 1500:
+        sanitized = sanitized[:1500] + "..."
+
+    return sanitized
+
 # -------------------------------------------------
 # Main workflow
 # -------------------------------------------------
@@ -374,46 +393,68 @@ async def main() -> None:
                     name = cast(str, c.get("name", "Valued Sponsor"))
                     person = cast(str, c.get("contact_person", "Sir/Madam"))
 
-                    subject = f"Sponsorship Invitation: {event_info.event_type} in {event_info.location.city}"
-                    email_prompt = (
-                        f"Compose a polite sponsorship request email to {name} addressed to {person}. "
-                        f"The event is a {event_info.event_type} in {event_info.location.city}, {event_info.location.country}. "
-                        "Mention their business and request their sponsorship support. Respond ONLY as JSON with keys: to, subject, body. "
-                        f"The 'to' field must be ['{email}']."
-                    )
-                    resp = await event_agent.run(email_prompt, output_type=EmailDraft)
-                    draft: EmailDraft
-                    if isinstance(resp.output, dict):
-                        draft = EmailDraft(**resp.output)
-                    else:
-                        draft = EmailDraft(to=[email], subject=subject, body=str(resp.output))
+                subject = f"Sponsorship Invitation: {event_info.event_type} in {event_info.location.city}"
 
-                    # Use event_agent.run directly with a prompt that instructs the agent to use the draft_email tool
+                # Create a more concise email prompt to avoid token limits
+                email_prompt = (
+                    f"Write a brief, professional sponsorship request email (max 200 words) to {name}. "
+                    f"Event: {event_info.event_type} in {event_info.location.city}, {event_info.location.country}. "
+                    f"Address it to {person}. Keep it concise and compelling."
+                )
+
+                try:
+                    resp = await event_agent.run(email_prompt)
+                    email_body = str(resp.output).strip()
+
+                    # Limit email body length to prevent token issues
+                    if len(email_body) > 1500:
+                        email_body = email_body[:1500] + "..."
+
+                    # Create the draft using a more structured approach
                     draft_email_prompt = f"""
-                    Use the draft_email tool to create a draft email with the following details:
+                    Use the draft_email tool to create a Gmail draft.
 
-                    The recipient email is {draft.to[0]}, the subject is '{draft.subject}', and the body is:
+                    Recipient: {email}
+                    Subject: {subject}
 
-                    {draft.body}
+                    Email body:
+                    {email_body}
 
-                    Just create the draft, no need to send it.
+                    Create the draft now using the draft_email tool.
                     """
 
-                    print(f"\n--- DRAFT EMAIL PROMPT ---\n{draft_email_prompt}\n--- END PROMPT ---\n")
+                    print(f"\n--- Creating draft for {email} ---")
+                    print(f"Subject: {subject}")
+                    print(f"Body preview: {email_body[:100]}...")
 
-                    try:
-                        draft_response = await event_agent.run(draft_email_prompt)
-                        print(f"\n--- DRAFT RESPONSE ---\n{draft_response.output}\n--- END RESPONSE ---\n")
-                        logfire.info(f"Draft response: {draft_response.output}")
+                    # Try with retries for robustness
+                    max_retries = 2
+                    for attempt in range(max_retries):
+                        try:
+                            draft_response = await event_agent.run(draft_email_prompt)
+                            print(f"\n✅ Draft email successfully created for {email}")
+                            print("Check your Gmail drafts folder to see the created draft.")
+                            logfire.info(f"Draft created successfully for {email}")
+                            break
+                        except Exception as e:
+                            if "tool_use_failed" in str(e) and attempt < max_retries - 1:
+                                print(f"⚠️  Attempt {attempt + 1} failed, retrying with simpler format...")
+                                # Try with an even simpler approach
+                                simple_prompt = f"Use the draft_email tool to create a Gmail draft. Send to: {email}. Subject: Sponsorship Opportunity. Write a brief sponsorship request for our {event_info.event_type} event."
+                                draft_email_prompt = simple_prompt
+                                continue
+                            else:
+                                print(f"\n❌ Error creating draft email after {attempt + 1} attempts: {str(e)}")
+                                print(f"💡 You can manually create a draft email to {email} with subject '{subject}'")
+                                print(f"📧 Email content preview:\n{email_body[:200]}...")
+                                logfire.error(f"Error creating draft email for {email}: {str(e)}")
+                                break
 
-                        # Add a clear success message regardless of the agent's response
-                        print(f"\n✅ Draft email successfully created for {email}")
-                        print("Check your Gmail drafts folder to see the created draft.")
-                    except Exception as e:
-                        print(f"\n❌ Error creating draft email: {str(e)}")
-                        logfire.error(f"Error creating draft email: {str(e)}")
+                except Exception as e:
+                    print(f"\n❌ Error in email generation process: {str(e)}")
+                    logfire.error(f"Error in email generation for {email}: {str(e)}")
 
-                    logfire.info(f"Draft saved for {email}")
+                logfire.info(f"Draft process completed for {email}")
 
                 print("\n✅ Draft emails created and saved. Ready for next event.\n")
 
