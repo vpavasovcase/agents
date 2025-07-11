@@ -1,6 +1,6 @@
 # AI Agent Development Workshop
 
-This repository contains materials and student projects from a 20-hour AI agent development workshop focused on building practical AI agents using PydanticAI and the Model Context Protocol (MCP).
+This repository contains materials and student projects from a 40-hour AI agent development workshop focused on building practical AI agents using PydanticAI and the Model Context Protocol (MCP).
 
 ## Workshop Overview
 
